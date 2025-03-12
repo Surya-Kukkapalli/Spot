@@ -1,74 +1,169 @@
 import SwiftUI
 
-struct ExerciseView: View {
-    @State private var exercise: Exercise
-    @State private var showAddSet = false
-    @ObservedObject var viewModel: WorkoutViewModel
-    let exerciseIndex: Int
+class ExerciseViewModel: ObservableObject {
+    @Published var exercises: [ExerciseTemplate] = []
+    @Published var filteredExercises: [ExerciseTemplate] = []
+    @Published var isLoading = false
+    @Published var error: String?
     
-    init(exercise: Exercise, exerciseIndex: Int, viewModel: WorkoutViewModel) {
-        _exercise = State(initialValue: exercise)
-        self.exerciseIndex = exerciseIndex
-        self.viewModel = viewModel
+    @MainActor
+    func loadExercises() async {
+        isLoading = true
+        error = nil
+        
+        do {
+            exercises = try await ExerciseService.shared.fetchExercises()
+            filteredExercises = exercises
+        } catch {
+            self.error = error.localizedDescription
+        }
+        
+        isLoading = false
     }
     
+    func filterExercises(by bodyPart: String? = nil, equipment: String? = nil) {
+        filteredExercises = exercises.filter { exercise in
+            let matchesBodyPart = bodyPart == nil || exercise.bodyPart.lowercased() == bodyPart?.lowercased()
+            let matchesEquipment = equipment == nil || exercise.equipment.lowercased() == equipment?.lowercased()
+            return matchesBodyPart && matchesEquipment
+        }
+    }
+    
+    // Add a function to convert ExerciseTemplate to Exercise
+    func createExercise(from template: ExerciseTemplate) -> Exercise {
+        return Exercise(from: template)
+    }
+}
+
+struct ExerciseTemplateRowView: View {
+    let exercise: ExerciseTemplate
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Exercise Header
-            HStack {
-                Text(exercise.name)
+        HStack(spacing: 16) {
+            // Exercise Image
+            AsyncImage(url: URL(string: exercise.gifUrl)) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } placeholder: {
+                Color.gray.opacity(0.3)
+            }
+            .frame(width: 60, height: 60)
+            .cornerRadius(8)
+            
+            // Exercise Details
+            VStack(alignment: .leading, spacing: 4) {
+                Text(exercise.name.capitalized)
                     .font(.headline)
-                Spacer()
-                Text(exercise.equipment.rawValue.capitalized)
+                Text(exercise.target.capitalized)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
             
-            // Sets List
-            ForEach(exercise.sets) { set in
-                HStack {
-                    Image(systemName: set.isCompleted ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(set.isCompleted ? .green : .gray)
-                    
-                    Text("\(Int(set.weight))kg × \(set.reps)")
-                    
-                    Spacer()
-                    
-                    Text(set.type.rawValue.capitalized)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding()
+        .background(Color(.systemBackground))
+    }
+}
+
+struct ExerciseView: View {
+    @StateObject private var viewModel = ExerciseViewModel()
+    @ObservedObject var workoutViewModel: WorkoutViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+    
+    var filteredExercises: [ExerciseTemplate] {
+        if searchText.isEmpty {
+            return viewModel.filteredExercises
+        }
+        return viewModel.filteredExercises.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+    
+    var body: some View {
+        VStack {
+            if viewModel.isLoading {
+                ProgressView("Loading exercises...")
+            } else if let error = viewModel.error {
+                Text("Error: \(error)")
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filteredExercises) { template in
+                            ExerciseTemplateRowView(exercise: template)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    let exercise = Exercise(from: template)
+                                    workoutViewModel.addExercise(exercise)
+                                    dismiss()
+                                }
+                            Divider()
+                        }
+                    }
                 }
             }
-            
-            // Add Set Button
-            Button {
-                showAddSet = true
-            } label: {
-                Label("Add Set", systemImage: "plus.circle")
-                    .font(.subheadline)
+        }
+        .searchable(text: $searchText, prompt: "Search exercises")
+        .navigationTitle("Add Exercise")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Cancel") {
+                    dismiss()
+                }
             }
         }
-        .padding(.vertical, 8)
-        .sheet(isPresented: $showAddSet) {
-            AddSetView(
-                exerciseIndex: exerciseIndex, viewModel: viewModel
-            )
+        .task {
+            await viewModel.loadExercises()
         }
     }
 }
 
+struct ExerciseDetailView: View {
+    let exercise: ExerciseTemplate
+    
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                AsyncImage(url: URL(string: exercise.gifUrl)) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    ProgressView()
+                }
+                .frame(height: 200)
+                
+                Group {
+                    Text("Target Muscle: \(exercise.target.capitalized)")
+                        .font(.headline)
+                    
+                    Text("Equipment: \(exercise.equipment.capitalized)")
+                        .font(.headline)
+                    
+                    if !exercise.secondaryMuscles.isEmpty {
+                        Text("Secondary Muscles:")
+                            .font(.headline)
+                        Text(exercise.secondaryMuscles.map { $0.capitalized }.joined(separator: ", "))
+                    }
+                    
+                    Text("Instructions:")
+                        .font(.headline)
+                    ForEach(exercise.instructions.indices, id: \.self) { index in
+                        Text("\(index + 1). \(exercise.instructions[index])")
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+        .navigationTitle(exercise.name.capitalized)
+    }
+}
+
 #Preview {
-    ExerciseView(
-        exercise: Exercise(
-            id: UUID().uuidString,
-            name: "Bench Press",
-            sets: [
-                ExerciseSet(id: UUID().uuidString, weight: 100, reps: 8, type: .normal, isCompleted: true, restInterval: 90),
-                ExerciseSet(id: UUID().uuidString, weight: 100, reps: 8, type: .normal, isCompleted: false, restInterval: 90)
-            ],
-            equipment: .barbell
-        ),
-        exerciseIndex: 0,
-        viewModel: WorkoutViewModel()
-    )
+    NavigationView {
+        ExerciseView(workoutViewModel: WorkoutViewModel())
+    }
 }

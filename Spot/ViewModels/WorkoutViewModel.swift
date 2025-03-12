@@ -33,6 +33,10 @@ class WorkoutViewModel: ObservableObject {
         self.workoutStartTime = Date()
     }
     
+    func addExercise(_ exercise: Exercise) {
+        exercises.append(exercise)
+    }
+    
     func addExercise(name: String, equipment: Equipment) {
         let exercise = Exercise(
             id: UUID().uuidString,
