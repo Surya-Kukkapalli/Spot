@@ -1,33 +1,34 @@
 import SwiftUI
 
 struct NewWorkoutSheet: View {
-    @Binding var workoutName: String
-    let onStart: () -> Void
     @Environment(\.dismiss) var dismiss
+    @State private var workoutName = ""
+    var onStart: (String) -> Void
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section {
                     TextField("Workout Name", text: $workoutName)
                 }
             }
             .navigationTitle("New Workout")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
+            .navigationBarItems(
+                leading: Button("Cancel") {
+                    dismiss()
+                },
+                trailing: Button("Start") {
+                    onStart(workoutName)
+                    dismiss()
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Start") {
-                        onStart()
-                        dismiss()
-                    }
-                    .disabled(workoutName.isEmpty)
-                }
-            }
+                .disabled(workoutName.isEmpty)
+            )
         }
+    }
+}
+
+#Preview {
+    NewWorkoutSheet { name in
+        print("Starting workout: \(name)")
     }
 } 

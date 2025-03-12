@@ -1,34 +1,74 @@
 import SwiftUI
 
 struct ExerciseView: View {
-    @Binding var exercise: Exercise
+    @State private var exercise: Exercise
+    @State private var showAddSet = false
     @ObservedObject var viewModel: WorkoutViewModel
-    @State private var showingSetInput = false
+    let exerciseIndex: Int
+    
+    init(exercise: Exercise, exerciseIndex: Int, viewModel: WorkoutViewModel) {
+        _exercise = State(initialValue: exercise)
+        self.exerciseIndex = exerciseIndex
+        self.viewModel = viewModel
+    }
     
     var body: some View {
-        Section(header: Text(exercise.name)) {
+        VStack(alignment: .leading, spacing: 8) {
+            // Exercise Header
+            HStack {
+                Text(exercise.name)
+                    .font(.headline)
+                Spacer()
+                Text(exercise.equipment.rawValue.capitalized)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            
+            // Sets List
             ForEach(exercise.sets) { set in
                 HStack {
-                    Text("\(Int(set.weight))kg")
-                    Text("×")
-                    Text("\(set.reps) reps")
+                    Image(systemName: set.isCompleted ? "checkmark.circle.fill" : "circle")
+                        .foregroundColor(set.isCompleted ? .green : .gray)
+                    
+                    Text("\(Int(set.weight))kg × \(set.reps)")
+                    
                     Spacer()
-                    if set.isCompleted {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                    }
+                    
+                    Text(set.type.rawValue.capitalized)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
             }
             
-            Button(action: { showingSetInput = true }) {
-                Label("Add Set", systemImage: "plus")
+            // Add Set Button
+            Button {
+                showAddSet = true
+            } label: {
+                Label("Add Set", systemImage: "plus.circle")
+                    .font(.subheadline)
             }
         }
-        .sheet(isPresented: $showingSetInput) {
+        .padding(.vertical, 8)
+        .sheet(isPresented: $showAddSet) {
             AddSetView(
-                exerciseIndex: viewModel.exercises.firstIndex(where: { $0.id == exercise.id }) ?? 0,
-                viewModel: viewModel
+                exerciseIndex: exerciseIndex, viewModel: viewModel
             )
         }
     }
-} 
+}
+
+#Preview {
+    ExerciseView(
+        exercise: Exercise(
+            id: UUID().uuidString,
+            name: "Bench Press",
+            sets: [
+                ExerciseSet(id: UUID().uuidString, weight: 100, reps: 8, type: .normal, isCompleted: true, restInterval: 90),
+                ExerciseSet(id: UUID().uuidString, weight: 100, reps: 8, type: .normal, isCompleted: false, restInterval: 90)
+            ],
+            equipment: .barbell
+        ),
+        exerciseIndex: 0,
+        viewModel: WorkoutViewModel()
+    )
+}

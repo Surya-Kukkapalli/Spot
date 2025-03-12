@@ -3,48 +3,74 @@ import SwiftUI
 struct LoginView: View {
     @State private var email = ""
     @State private var password = ""
-    @State private var showingSignUp = false
+    @State private var showSignUp = false
     @EnvironmentObject var authViewModel: AuthViewModel
+    @State private var showError = false
+    @State private var errorMessage = ""
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
+        NavigationStack {
+            VStack {
+                // Logo/Title
                 Text("Spot")
                     .font(.largeTitle)
-                    .bold()
+                    .fontWeight(.bold)
+                    .padding(.vertical, 32)
                 
-                VStack(spacing: 15) {
+                // Input fields
+                VStack(spacing: 24) {
                     TextField("Email", text: $email)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .textContentType(.emailAddress)
-                        .autocapitalization(.none)
+                        .textFieldStyle(.roundedBorder)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                     
                     SecureField("Password", text: $password)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .textFieldStyle(.roundedBorder)
                 }
                 .padding(.horizontal)
                 
-                Button(action: {
+                // Sign In Button
+                Button {
                     Task {
-                        try? await authViewModel.signIn(withEmail: email, password: password)
+                        do {
+                            try await authViewModel.signIn(withEmail: email, password: password)
+                        } catch {
+                            errorMessage = error.localizedDescription
+                            showError = true
+                        }
                     }
-                }) {
+                } label: {
                     Text("Sign In")
+                        .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding()
+                        .frame(height: 44)
                         .background(Color.blue)
-                        .cornerRadius(10)
+                        .cornerRadius(8)
                 }
-                .padding(.horizontal)
+                .padding()
                 
-                Button("Create Account") {
-                    showingSignUp = true
+                // Sign Up Link
+                Button {
+                    showSignUp = true
+                } label: {
+                    Text("Don't have an account? Create one")
+                        .foregroundColor(.blue)
                 }
             }
-            .sheet(isPresented: $showingSignUp) {
+            .navigationDestination(isPresented: $showSignUp) {
                 SignUpView()
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
             }
         }
     }
+}
+
+#Preview {
+    LoginView()
+        .environmentObject(AuthViewModel())
 } 

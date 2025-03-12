@@ -28,9 +28,22 @@ class AuthViewModel: ObservableObject {
     
     func createUser(email: String, password: String, username: String, fullName: String) async throws {
         do {
+            print("Starting user creation process")
+            
+            // Basic validation
+            guard !email.isEmpty, !password.isEmpty, !username.isEmpty, !fullName.isEmpty else {
+                print("Validation failed: empty fields")
+                throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "All fields are required"])
+            }
+            
+            // Create auth user
+            print("Creating auth user")
             let result = try await Auth.auth().createUser(withEmail: email, password: password)
             self.userSession = result.user
             
+            print("Auth user created with ID: \(result.user.uid)")
+            
+            // Create user document
             let user = User(
                 id: result.user.uid,
                 username: username,
@@ -42,10 +55,23 @@ class AuthViewModel: ObservableObject {
                 createdAt: Date()
             )
             
+            print("Encoding user data")
             let encodedUser = try Firestore.Encoder().encode(user)
+            
+            print("Saving user to Firestore")
             try await Firestore.firestore().collection("users").document(result.user.uid).setData(encodedUser)
+            
+            print("User document created successfully")
             self.currentUser = user
-        } catch {
+            
+        } catch let error as NSError {
+            print("Error in createUser: \(error)")
+            print("Error domain: \(error.domain)")
+            print("Error code: \(error.code)")
+            print("Error description: \(error.localizedDescription)")
+            if let underlyingError = error.userInfo[NSUnderlyingErrorKey] as? Error {
+                print("Underlying error: \(underlyingError)")
+            }
             throw error
         }
     }

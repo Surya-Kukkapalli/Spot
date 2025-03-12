@@ -1,90 +1,110 @@
 import SwiftUI
+import FirebaseFirestore
 
 struct WorkoutView: View {
     @StateObject private var viewModel = WorkoutViewModel()
-    @State private var showingNewWorkoutSheet = false
-    @State private var workoutName = ""
-    @State private var showingExerciseSearch = false
+    @State private var showNewWorkoutSheet = false
+    @State private var showExerciseSearch = false
+    @State private var selectedExerciseIndex: Int?
     
     var body: some View {
-        NavigationView {
-            Group {
-                if viewModel.isWorkoutInProgress {
-                    ActiveWorkoutView(viewModel: viewModel)
-                } else {
-                    WorkoutStartView(
-                        showingNewWorkoutSheet: $showingNewWorkoutSheet
+        NavigationStack {
+            content
+                .navigationTitle("Workout")
+                .sheet(isPresented: $showNewWorkoutSheet) {
+                    NewWorkoutSheet { name in
+                        viewModel.startNewWorkout(name: name)
+                    }
+                }
+                .sheet(isPresented: $showExerciseSearch) {
+                    ExerciseSearchView(viewModel: viewModel)
+                }
+        }
+    }
+    
+    @ViewBuilder
+    private var content: some View {
+        if viewModel.isWorkoutInProgress {
+            ActiveWorkoutView(
+                viewModel: viewModel,
+                showExerciseSearch: $showExerciseSearch
+            )
+        } else {
+            NoWorkoutView(showNewWorkoutSheet: $showNewWorkoutSheet)
+        }
+    }
+}
+
+// MARK: - Subviews
+private struct ActiveWorkoutView: View {
+    @ObservedObject var viewModel: WorkoutViewModel
+    @Binding var showExerciseSearch: Bool
+    
+    var body: some View {
+        VStack {
+            // Workout Timer
+            WorkoutTimerView(startTime: viewModel.workoutStartTime ?? Date())
+                .padding()
+            
+            // Exercise List
+            List {
+                ForEach(Array(viewModel.exercises.enumerated()), id: \.element.id) { index, exercise in
+                    ExerciseView(
+                        exercise: exercise,
+                        exerciseIndex: index,
+                        viewModel: viewModel
                     )
                 }
             }
-            .navigationTitle("Workout")
-            .sheet(isPresented: $showingNewWorkoutSheet) {
-                NewWorkoutSheet(
-                    workoutName: $workoutName,
-                    onStart: {
-                        viewModel.startNewWorkout(name: workoutName)
-                        showingNewWorkoutSheet = false
+            
+            // Bottom Buttons
+            VStack(spacing: 16) {
+                Button {
+                    showExerciseSearch = true
+                } label: {
+                    Label("Add Exercise", systemImage: "plus.circle.fill")
+                        .font(.headline)
+                }
+                
+                Button {
+                    Task {
+                        try? await viewModel.finishWorkout()
                     }
-                )
-            }
-        }
-    }
-}
-
-struct ActiveWorkoutView: View {
-    @ObservedObject var viewModel: WorkoutViewModel
-    @State private var showingExerciseSearch = false
-    
-    var body: some View {
-        List {
-            // Workout Timer Section
-            Section {
-                WorkoutTimerView(startTime: viewModel.workoutStartTime ?? Date())
-            }
-            
-            // Exercises Section
-            ForEach(viewModel.exercises.indices, id: \.self) { index in
-                ExerciseView(exercise: $viewModel.exercises[index], viewModel: viewModel)
-            }
-            
-            Button(action: { showingExerciseSearch = true }) {
-                Label("Add Exercise", systemImage: "plus.circle.fill")
-            }
-        }
-        .sheet(isPresented: $showingExerciseSearch) {
-            ExerciseSearchView(viewModel: viewModel)
-        }
-        .toolbar {
-            Button("Finish") {
-                Task {
-                    try? await viewModel.finishWorkout()
+                } label: {
+                    Text("Finish Workout")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(Color.blue)
+                        .cornerRadius(8)
                 }
             }
+            .padding()
         }
     }
 }
 
-struct WorkoutStartView: View {
-    @Binding var showingNewWorkoutSheet: Bool
+private struct NoWorkoutView: View {
+    @Binding var showNewWorkoutSheet: Bool
     
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "figure.run")
-                .font(.system(size: 60))
+        VStack {
+            Text("No Active Workout")
+                .font(.title)
+                .foregroundColor(.secondary)
             
-            Text("Ready to crush your workout?")
-                .font(.title2)
-            
-            Button(action: { showingNewWorkoutSheet = true }) {
-                Text("Start Workout")
+            Button {
+                showNewWorkoutSheet = true
+            } label: {
+                Label("Start New Workout", systemImage: "plus.circle.fill")
                     .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.blue)
-                    .cornerRadius(10)
             }
-            .padding(.horizontal)
+            .padding()
         }
     }
+}
+
+#Preview {
+    WorkoutView()
 } 
