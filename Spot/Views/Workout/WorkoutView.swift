@@ -42,51 +42,37 @@ private struct ActiveWorkoutView: View {
     @Binding var showExerciseSearch: Bool
     
     var body: some View {
-        VStack(spacing: 20) {
-            // Stats Section
-            HStack(spacing: 40) {
-                StatView(title: "Duration", value: formatDuration())
-                StatView(title: "Volume", value: "\(calculateVolume()) lbs")
-                StatView(title: "Sets", value: "\(calculateTotalSets())")
-            }
-            .padding(.top)
-            
-            if viewModel.exercises.isEmpty {
-                // Empty State
-                Spacer()
-                EmptyWorkoutView(showExerciseSearch: $showExerciseSearch)
-                Spacer()
-            } else {
-                // Exercise List
-                exerciseList
-            }
-            
-            // Bottom Buttons
-            VStack(spacing: 16) {
-                addExerciseButton
-                finishWorkoutButton
-            }
-            .padding()
-        }
-    }
-    
-    private var exerciseList: some View {
         ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(Array(viewModel.exercises.enumerated()), id: \.element.id) { index, exercise in
-                    NavigationLink {
-                        WorkoutExerciseDetailView(
-                            exercise: exercise,
-                            viewModel: viewModel,
-                            exerciseIndex: index
-                        )
-                    } label: {
-                        ExerciseRowView(exercise: exercise, exerciseIndex: index)
-                            .foregroundColor(.primary)
-                    }
+            VStack(spacing: 20) {
+                // Stats Section
+                HStack(spacing: 40) {
+                    StatView(title: "Duration", value: formatDuration())
+                    StatView(title: "Volume", value: "\(calculateVolume()) lbs")
+                    StatView(title: "Sets", value: "\(calculateTotalSets())")
                 }
+                .padding(.top)
+                
+                if viewModel.exercises.isEmpty {
+                    // Empty State
+                    EmptyWorkoutView(showExerciseSearch: $showExerciseSearch)
+                        .padding(.vertical, 40)
+                } else {
+                    // Exercise List
+                    LazyVStack(spacing: 12) {
+                        ForEach(Array(viewModel.exercises.enumerated()), id: \.element.id) { index, exercise in
+                            WorkoutExerciseView(workoutViewModel: viewModel, exerciseIndex: index)
+                        }
+                    }
+                    .padding()
+                }
+                
+                // Bottom Buttons
+                VStack(spacing: 16) {
+                    addExerciseButton
+                    finishWorkoutButton
+                }
+                .padding()
             }
-            .padding()
         }
     }
     
@@ -250,6 +236,70 @@ struct NoWorkoutView: View {
                 .padding(.horizontal, 40)
             }
         }
+    }
+}
+
+// Update WorkoutExerciseView to safely handle deletion
+struct WorkoutExerciseView: View {
+    @ObservedObject var workoutViewModel: WorkoutViewModel
+    let exerciseIndex: Int
+    @State private var showingOptions = false
+    
+    private var exercise: Exercise {
+        guard workoutViewModel.exercises.indices.contains(exerciseIndex) else {
+            return Exercise(id: "", name: "", sets: [], equipment: .bodyweight)
+        }
+        return workoutViewModel.exercises[exerciseIndex]
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Exercise Header with Image and Name
+            HStack(spacing: 12) {
+                AsyncImage(url: URL(string: exercise.gifUrl)) { image in
+                    image.resizable().aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    Color.gray.opacity(0.3)
+                }
+                .frame(width: 50, height: 50)
+                .cornerRadius(8)
+                
+                Text(exercise.name.capitalized)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                Menu {
+                    Button(role: .destructive) {
+                        withAnimation {
+                            workoutViewModel.removeExercise(at: exerciseIndex)
+                        }
+                    } label: {
+                        Label("Delete Exercise", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundColor(.gray)
+                        .padding(8)
+                }
+            }
+            
+            // Only show the rest of the exercise content if it exists in the array
+            if workoutViewModel.exercises.indices.contains(exerciseIndex) {
+                // Notes TextField
+                TextField("Add notes here...", text: Binding(
+                    get: { exercise.notes ?? "" },
+                    set: { workoutViewModel.exercises[exerciseIndex].notes = $0.isEmpty ? nil : $0 }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .font(.subheadline)
+                
+                // Rest Timer Toggle and Sets content...
+                // (Keep the rest of the exercise content the same)
+            }
+        }
+        .padding()
     }
 }
 

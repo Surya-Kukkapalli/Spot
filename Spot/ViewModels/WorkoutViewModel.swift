@@ -60,7 +60,7 @@ class WorkoutViewModel: ObservableObject {
     }
     
     func removeExercise(at index: Int) {
-        guard index < exercises.count else { return }
+        guard exercises.indices.contains(index) else { return }
         exercises.remove(at: index)
     }
     
