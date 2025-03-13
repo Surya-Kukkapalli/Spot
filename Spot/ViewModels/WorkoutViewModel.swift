@@ -47,16 +47,21 @@ class WorkoutViewModel: ObservableObject {
         exercises.append(exercise)
     }
     
-    func addSet(to exerciseIndex: Int, weight: Double, reps: Int, type: ExerciseSet.SetType = .normal) {
-        let set = ExerciseSet(
-            id: UUID().uuidString,
-            weight: weight,
-            reps: reps,
-            type: type,
-            isCompleted: false,
-            restInterval: 90
-        )
-        exercises[exerciseIndex].sets.append(set)
+    func addSet(to exerciseIndex: Int) {
+        guard exerciseIndex < exercises.count else { return }
+        let newSet = ExerciseSet(id: UUID().uuidString)
+        exercises[exerciseIndex].sets.append(newSet)
+    }
+    
+    func removeSet(from exerciseIndex: Int, at setIndex: Int) {
+        guard exerciseIndex < exercises.count,
+              setIndex < exercises[exerciseIndex].sets.count else { return }
+        exercises[exerciseIndex].sets.remove(at: setIndex)
+    }
+    
+    func removeExercise(at index: Int) {
+        guard index < exercises.count else { return }
+        exercises.remove(at: index)
     }
     
     func startRestTimer(seconds: TimeInterval) {

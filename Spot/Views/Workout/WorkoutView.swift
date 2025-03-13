@@ -179,6 +179,7 @@ struct EmptyWorkoutView: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             
+            /*
             Button {
                 showExerciseSearch = true
             } label: {
@@ -194,6 +195,7 @@ struct EmptyWorkoutView: View {
                 .cornerRadius(10)
                 .padding(.horizontal, 40)
             }
+            */
         }
     }
 }

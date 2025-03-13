@@ -5,15 +5,123 @@ class ExerciseViewModel: ObservableObject {
     @Published var filteredExercises: [ExerciseTemplate] = []
     @Published var isLoading = false
     @Published var error: String?
+    @Published var selectedBodyPart: String?
+    @Published var selectedEquipment: String?
+    @Published var searchText: String = ""
+    private var hasMoreExercises = true
+    private var allExercises: [ExerciseTemplate] = [] // Store all exercises for search
+    
+    var bodyParts: [String] = []
+    var equipmentTypes: [String] = []
+    
+    var organizedExercises: [(section: String, exercises: [ExerciseTemplate])] {
+        var sections: [(String, [ExerciseTemplate])] = []
+        
+        // Get exercises that match search
+        let searchResults: [ExerciseTemplate]
+        if searchText.isEmpty {
+            searchResults = filteredExercises
+        } else {
+            // Use allExercises for search if available, otherwise use current exercises
+            let searchSource = !allExercises.isEmpty ? allExercises : filteredExercises
+            searchResults = searchSource.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        }
+        
+        // Recent section
+        let recentExercises = ExerciseService.shared.getRecentExercises()
+        let recentSearchResults = searchText.isEmpty ? recentExercises :
+            recentExercises.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        
+        if !recentSearchResults.isEmpty {
+            sections.append(("Recent", recentSearchResults))
+        }
+        
+        // Alphabetical sections
+        let filtered = searchResults.filter { exercise in
+            !recentExercises.contains { $0.id == exercise.id }
+        }
+        
+        // Separate alphabetical and numerical exercises
+        let (alphabetical, numerical) = filtered.reduce(into: ([ExerciseTemplate](), [ExerciseTemplate]())) { result, exercise in
+            if exercise.name.first?.isLetter == true {
+                result.0.append(exercise)
+            } else {
+                result.1.append(exercise)
+            }
+        }
+        
+        // Group alphabetical exercises
+        let grouped = Dictionary(grouping: alphabetical) { exercise in
+            String(exercise.name.prefix(1).uppercased())
+        }
+        
+        let alphabeticalSections = grouped.map { ($0.key, $0.value.sorted { $0.name < $1.name }) }
+            .sorted { $0.0 < $1.0 }
+        
+        sections.append(contentsOf: alphabeticalSections)
+        
+        // Add numerical exercises to Misc section
+        if !numerical.isEmpty {
+            sections.append(("Misc", numerical.sorted { $0.name < $1.name }))
+        }
+        
+        return sections
+    }
+    
+    @MainActor
+    func loadAllExercisesIfNeeded() async {
+        guard !searchText.isEmpty && allExercises.isEmpty else { return }
+        
+        isLoading = true
+        do {
+            allExercises = try await ExerciseService.shared.fetchAllExercises()
+        } catch {
+            self.error = error.localizedDescription
+        }
+        isLoading = false
+    }
+    
+    @MainActor
+    func reset() {
+        exercises = []
+        filteredExercises = []
+        allExercises = [] // Reset all exercises
+        hasMoreExercises = true
+        ExerciseService.shared.reset()
+    }
     
     @MainActor
     func loadExercises() async {
+        guard !isLoading else { return }
         isLoading = true
         error = nil
         
         do {
-            exercises = try await ExerciseService.shared.fetchExercises()
+            let newExercises = try await ExerciseService.shared.fetchExercises()
+            exercises = newExercises
             filteredExercises = exercises
+            hasMoreExercises = newExercises.count == 50 // pageSize
+        } catch {
+            self.error = error.localizedDescription
+        }
+        
+        isLoading = false
+    }
+    
+    @MainActor
+    func loadMoreIfNeeded(currentExercise exercise: ExerciseTemplate) async {
+        guard hasMoreExercises,
+              !isLoading,
+              let index = exercises.firstIndex(where: { $0.id == exercise.id }),
+              index >= exercises.count - 10 else { return }
+        
+        isLoading = true
+        
+        do {
+            let newExercises = try await ExerciseService.shared.fetchExercises()
+            exercises.append(contentsOf: newExercises)
+            filterExercises() // Reapply any current filters
+            hasMoreExercises = newExercises.count == 50 // pageSize
         } catch {
             self.error = error.localizedDescription
         }
@@ -25,6 +133,17 @@ class ExerciseViewModel: ObservableObject {
         filteredExercises = exercises.filter { exercise in
             let matchesBodyPart = bodyPart == nil || exercise.bodyPart.lowercased() == bodyPart?.lowercased()
             let matchesEquipment = equipment == nil || exercise.equipment.lowercased() == equipment?.lowercased()
+            return matchesBodyPart && matchesEquipment
+        }
+    }
+    
+    @MainActor
+    func updateFilters() {
+        filteredExercises = exercises.filter { exercise in
+            let matchesBodyPart = selectedBodyPart == nil || 
+                exercise.bodyPart.lowercased() == selectedBodyPart?.lowercased()
+            let matchesEquipment = selectedEquipment == nil || 
+                exercise.equipment.lowercased() == selectedEquipment?.lowercased()
             return matchesBodyPart && matchesEquipment
         }
     }
@@ -71,41 +190,47 @@ struct ExerciseView: View {
     @StateObject private var viewModel = ExerciseViewModel()
     @ObservedObject var workoutViewModel: WorkoutViewModel
     @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
-    
-    var filteredExercises: [ExerciseTemplate] {
-        if searchText.isEmpty {
-            return viewModel.filteredExercises
-        }
-        return viewModel.filteredExercises.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText)
-        }
-    }
+    @State private var showFilters = false
     
     var body: some View {
         VStack {
-            if viewModel.isLoading {
+            if viewModel.isLoading && viewModel.exercises.isEmpty {
                 ProgressView("Loading exercises...")
             } else if let error = viewModel.error {
                 Text("Error: \(error)")
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(filteredExercises) { template in
-                            ExerciseTemplateRowView(exercise: template)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    let exercise = Exercise(from: template)
-                                    workoutViewModel.addExercise(exercise)
-                                    dismiss()
-                                }
-                            Divider()
+                filterBar
+                
+                List {
+                    ForEach(viewModel.organizedExercises, id: \.section) { section in
+                        Section(header: Text(section.section)) {
+                            ForEach(section.exercises) { template in
+                                ExerciseTemplateRowView(exercise: template)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        ExerciseService.shared.addToRecent(template)
+                                        let exercise = Exercise(from: template)
+                                        workoutViewModel.addExercise(exercise)
+                                        dismiss()
+                                    }
+                                    .onAppear {
+                                        Task {
+                                            await viewModel.loadMoreIfNeeded(currentExercise: template)
+                                        }
+                                    }
+                            }
                         }
                     }
+                    
+                    if viewModel.isLoading {
+                        ProgressView()
+                            .padding()
+                    }
                 }
+                .listStyle(.plain)
             }
         }
-        .searchable(text: $searchText, prompt: "Search exercises")
+        .searchable(text: $viewModel.searchText, prompt: "Search exercises")
         .navigationTitle("Add Exercise")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -114,9 +239,132 @@ struct ExerciseView: View {
                     dismiss()
                 }
             }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { showFilters.toggle() }) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showFilters) {
+            FilterView(
+                selectedBodyPart: $viewModel.selectedBodyPart,
+                selectedEquipment: $viewModel.selectedEquipment,
+                bodyParts: viewModel.bodyParts,
+                equipmentTypes: viewModel.equipmentTypes
+            )
+        }
+        .onChange(of: viewModel.selectedBodyPart, initial: false) { _, _ in
+            viewModel.updateFilters()
+        }
+        .onChange(of: viewModel.selectedEquipment, initial: false) { _, _ in
+            viewModel.updateFilters()
+        }
+        .onChange(of: viewModel.searchText, initial: false) { _, newValue in
+            if !newValue.isEmpty {
+                Task {
+                    await viewModel.loadAllExercisesIfNeeded()
+                }
+            }
         }
         .task {
+            viewModel.reset()
             await viewModel.loadExercises()
+        }
+    }
+    
+    private var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                if let bodyPart = viewModel.selectedBodyPart {
+                    FilterChip(text: bodyPart) {
+                        viewModel.selectedBodyPart = nil
+                    }
+                }
+                
+                if let equipment = viewModel.selectedEquipment {
+                    FilterChip(text: equipment) {
+                        viewModel.selectedEquipment = nil
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
+        .frame(height: viewModel.selectedBodyPart == nil && viewModel.selectedEquipment == nil ? 0 : 44)
+    }
+}
+
+struct FilterChip: View {
+    let text: String
+    let onRemove: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(text.capitalized)
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.gray)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color(.systemGray6))
+        .cornerRadius(16)
+    }
+}
+
+struct FilterView: View {
+    @Environment(\.dismiss) var dismiss
+    @Binding var selectedBodyPart: String?
+    @Binding var selectedEquipment: String?
+    let bodyParts: [String]
+    let equipmentTypes: [String]
+    
+    var body: some View {
+        NavigationView {
+            List {
+                Section("Body Part") {
+                    ForEach(bodyParts, id: \.self) { bodyPart in
+                        Button(action: {
+                            selectedBodyPart = bodyPart
+                            dismiss()
+                        }) {
+                            HStack {
+                                Text(bodyPart.capitalized)
+                                Spacer()
+                                if selectedBodyPart == bodyPart {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Section("Equipment") {
+                    ForEach(equipmentTypes, id: \.self) { equipment in
+                        Button(action: {
+                            selectedEquipment = equipment
+                            dismiss()
+                        }) {
+                            HStack {
+                                Text(equipment.capitalized)
+                                Spacer()
+                                if selectedEquipment == equipment {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Filters")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
         }
     }
 }
@@ -159,6 +407,157 @@ struct ExerciseDetailView: View {
             }
         }
         .navigationTitle(exercise.name.capitalized)
+    }
+}
+
+struct WorkoutExerciseView: View {
+    @ObservedObject var workoutViewModel: WorkoutViewModel
+    let exerciseIndex: Int
+    @State private var showingOptions = false
+    @State private var notes: String = "" // Add local state for notes
+    
+    private var exercise: Exercise {
+        workoutViewModel.exercises[exerciseIndex]
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Exercise Header
+            HStack {
+                AsyncImage(url: URL(string: exercise.gifUrl)) { image in
+                    image.resizable().aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    Color.gray.opacity(0.3)
+                }
+                .frame(width: 40, height: 40)
+                .cornerRadius(8)
+                
+                Text(exercise.name)
+                    .font(.headline)
+                
+                Spacer()
+                
+                Button(action: { showingOptions = true }) {
+                    Image(systemName: "ellipsis")
+                        .foregroundColor(.gray)
+                }
+                .confirmationDialog("Exercise Options", isPresented: $showingOptions) {
+                    Button("Delete Exercise", role: .destructive) {
+                        workoutViewModel.removeExercise(at: exerciseIndex)
+                    }
+                }
+            }
+            
+            // Updated Notes TextField
+            TextField("Add notes here...", text: Binding(
+                get: { workoutViewModel.exercises[exerciseIndex].notes ?? "" },
+                set: { workoutViewModel.exercises[exerciseIndex].notes = $0.isEmpty ? nil : $0 }
+            ))
+            .textFieldStyle(.roundedBorder)
+            .font(.subheadline)
+            
+            // Rest Timer Toggle
+            HStack {
+                Image(systemName: "timer")
+                    .foregroundColor(.blue)
+                Text("Rest Timer: ")
+                Toggle("", isOn: $workoutViewModel.exercises[exerciseIndex].restTimerEnabled)
+                    .labelsHidden()
+            }
+            
+            // Sets Header
+            HStack {
+                Text("SET")
+                    .frame(width: 40, alignment: .leading)
+                Text("PREVIOUS")
+                    .frame(width: 80, alignment: .leading)
+                Text("LBS")
+                    .frame(width: 60, alignment: .leading)
+                Text("REPS")
+                    .frame(width: 60, alignment: .leading)
+                Spacer()
+            }
+            .font(.caption)
+            .foregroundColor(.gray)
+            
+            // Sets List
+            ForEach(exercise.sets.indices, id: \.self) { setIndex in
+                SetRow(
+                    set: $workoutViewModel.exercises[exerciseIndex].sets[setIndex],
+                    setNumber: setIndex + 1,
+                    previousSet: nil, // TODO: Implement previous workout lookup
+                    onDelete: {
+                        workoutViewModel.removeSet(from: exerciseIndex, at: setIndex)
+                    }
+                )
+            }
+            
+            // Add Set Button
+            Button(action: {
+                workoutViewModel.addSet(to: exerciseIndex)
+            }) {
+                HStack {
+                    Image(systemName: "plus.circle.fill")
+                    Text("Add Set")
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+            }
+        }
+        .padding()
+        .onAppear {
+            // Initialize notes from exercise
+            notes = exercise.notes ?? ""
+        }
+    }
+}
+
+struct SetRow: View {
+    @Binding var set: ExerciseSet
+    let setNumber: Int
+    let previousSet: ExerciseSet?
+    let onDelete: () -> Void
+    
+    var body: some View {
+        HStack {
+            // Set Number
+            Text("\(setNumber)")
+                .frame(width: 40, alignment: .leading)
+            
+            // Previous
+            Text(previousSet.map { "\($0.weight)×\($0.reps)" } ?? "-")
+                .frame(width: 80, alignment: .leading)
+                .foregroundColor(.gray)
+            
+            // Weight Input
+            TextField("0", value: $set.weight, formatter: NumberFormatter())
+                .keyboardType(.decimalPad)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 60)
+            
+            // Reps Input
+            TextField("0", value: $set.reps, formatter: NumberFormatter())
+                .keyboardType(.numberPad)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 60)
+            
+            Spacer()
+            
+            // Complete/Delete Button
+            Button(action: {
+                if set.isCompleted {
+                    onDelete()
+                } else {
+                    set.isCompleted = true
+                }
+            }) {
+                Image(systemName: set.isCompleted ? "checkmark.circle.fill" : "checkmark.circle")
+                    .foregroundColor(set.isCompleted ? .green : .gray)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
