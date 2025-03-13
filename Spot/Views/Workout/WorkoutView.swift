@@ -5,6 +5,7 @@ struct WorkoutView: View {
     @StateObject private var viewModel = WorkoutViewModel()
     @State private var showNewWorkoutSheet = false
     @State private var showExerciseSearch = false
+    @State private var showSaveWorkout = false
     
     var body: some View {
         NavigationStack {
@@ -28,7 +29,8 @@ struct WorkoutView: View {
         if viewModel.isWorkoutInProgress {
             ActiveWorkoutView(
                 viewModel: viewModel,
-                showExerciseSearch: $showExerciseSearch
+                showExerciseSearch: $showExerciseSearch,
+                showSaveWorkout: $showSaveWorkout
             )
         } else {
             NoWorkoutView(showNewWorkoutSheet: $showNewWorkoutSheet)
@@ -40,6 +42,7 @@ struct WorkoutView: View {
 private struct ActiveWorkoutView: View {
     @ObservedObject var viewModel: WorkoutViewModel
     @Binding var showExerciseSearch: Bool
+    @Binding var showSaveWorkout: Bool
     
     var body: some View {
         ScrollView {
@@ -95,9 +98,7 @@ private struct ActiveWorkoutView: View {
     
     private var finishWorkoutButton: some View {
         Button {
-            Task {
-                try? await viewModel.finishWorkout()
-            }
+            showSaveWorkout = true
         } label: {
             Text("Finish")
                 .font(.headline)
@@ -109,6 +110,9 @@ private struct ActiveWorkoutView: View {
                     RoundedRectangle(cornerRadius: 10)
                         .stroke(Color.blue, lineWidth: 1)
                 )
+        }
+        .sheet(isPresented: $showSaveWorkout) {
+            SaveWorkoutView(viewModel: viewModel)
         }
     }
     
@@ -239,7 +243,7 @@ struct NoWorkoutView: View {
     }
 }
 
-// Update WorkoutExerciseView to safely handle deletion
+// Update WorkoutExerciseView to include sets
 struct WorkoutExerciseView: View {
     @ObservedObject var workoutViewModel: WorkoutViewModel
     let exerciseIndex: Int
@@ -254,7 +258,7 @@ struct WorkoutExerciseView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Exercise Header with Image and Name
+            // Exercise Header
             HStack(spacing: 12) {
                 AsyncImage(url: URL(string: exercise.gifUrl)) { image in
                     image.resizable().aspectRatio(contentMode: .fit)
@@ -285,21 +289,152 @@ struct WorkoutExerciseView: View {
                 }
             }
             
-            // Only show the rest of the exercise content if it exists in the array
-            if workoutViewModel.exercises.indices.contains(exerciseIndex) {
-                // Notes TextField
-                TextField("Add notes here...", text: Binding(
-                    get: { exercise.notes ?? "" },
-                    set: { workoutViewModel.exercises[exerciseIndex].notes = $0.isEmpty ? nil : $0 }
-                ))
-                .textFieldStyle(.roundedBorder)
-                .font(.subheadline)
+            // Notes TextField
+            TextField("Add notes here...", text: Binding(
+                get: { exercise.notes ?? "" },
+                set: { workoutViewModel.exercises[exerciseIndex].notes = $0.isEmpty ? nil : $0 }
+            ))
+            .textFieldStyle(.roundedBorder)
+            .font(.subheadline)
+            
+            // Rest Timer Toggle (to be implemented)
+            HStack {
+                Image(systemName: "clock")
+                    .foregroundColor(.blue)
+                Text("Rest Timer: OFF")
+                    .foregroundColor(.blue)
+            }
+            
+            // Sets Header
+            HStack {
+                Text("SET")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(width: 40, alignment: .leading)
                 
-                // Rest Timer Toggle and Sets content...
-                // (Keep the rest of the exercise content the same)
+                Text("PREVIOUS")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(width: 80)
+                
+                Text("LBS")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(width: 60)
+                
+                Text("REPS")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(width: 60)
+                
+                Spacer()
+            }
+            .padding(.top, 8)
+            
+            // Sets List
+            ForEach(exercise.sets.indices, id: \.self) { setIndex in
+                if workoutViewModel.exercises.indices.contains(exerciseIndex) &&
+                   workoutViewModel.exercises[exerciseIndex].sets.indices.contains(setIndex) {
+                    SetRowView(
+                        set: Binding(
+                            get: { 
+                                guard workoutViewModel.exercises.indices.contains(exerciseIndex),
+                                      workoutViewModel.exercises[exerciseIndex].sets.indices.contains(setIndex) else {
+                                    return ExerciseSet(id: UUID().uuidString)
+                                }
+                                return workoutViewModel.exercises[exerciseIndex].sets[setIndex]
+                            },
+                            set: { newValue in
+                                guard workoutViewModel.exercises.indices.contains(exerciseIndex),
+                                      workoutViewModel.exercises[exerciseIndex].sets.indices.contains(setIndex) else {
+                                    return
+                                }
+                                workoutViewModel.exercises[exerciseIndex].sets[setIndex] = newValue
+                            }
+                        ),
+                        setNumber: setIndex + 1,
+                        previousSet: setIndex > 0 ? exercise.sets[setIndex - 1] : nil,
+                        onDelete: {
+                            withAnimation {
+                                workoutViewModel.removeSet(from: exerciseIndex, at: setIndex)
+                            }
+                        }
+                    )
+                }
+            }
+            
+            // Add Set Button
+            Button {
+                workoutViewModel.addSet(to: exerciseIndex)
+            } label: {
+                HStack {
+                    Image(systemName: "plus")
+                    Text("Add Set")
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
             }
         }
         .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+    }
+}
+
+// Add this new view for the set row
+struct SetRowView: View {
+    @Binding var set: ExerciseSet
+    let setNumber: Int
+    let previousSet: ExerciseSet?
+    let onDelete: () -> Void
+    
+    var body: some View {
+        HStack {
+            // Set Number
+            Text("\(setNumber)")
+                .frame(width: 40, alignment: .leading)
+                .foregroundColor(.secondary)
+            
+            // Previous Set
+            Text(previousSet.map { "\(Int($0.weight)) × \($0.reps)" } ?? "-")
+                .frame(width: 80)
+                .foregroundColor(.secondary)
+            
+            // Weight
+            TextField("0", value: $set.weight, formatter: NumberFormatter())
+                .keyboardType(.decimalPad)
+                .frame(width: 60)
+                .multilineTextAlignment(.center)
+                .textFieldStyle(.roundedBorder)
+            
+            // Reps
+            TextField("0", value: $set.reps, formatter: NumberFormatter())
+                .keyboardType(.numberPad)
+                .frame(width: 60)
+                .multilineTextAlignment(.center)
+                .textFieldStyle(.roundedBorder)
+            
+            Spacer()
+            
+            // Completion Checkbox
+            Button {
+                set.isCompleted.toggle()
+            } label: {
+                Image(systemName: set.isCompleted ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(set.isCompleted ? .blue : .gray)
+                    .font(.title3)
+            }
+        }
+        .padding(.vertical, 4)
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 }
 

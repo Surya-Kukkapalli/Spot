@@ -12,7 +12,16 @@ class WorkoutViewModel: ObservableObject {
     @Published var currentRestTimer: Timer?
     @Published var remainingRestTime: TimeInterval = 0
     
+    var workoutDuration: TimeInterval {
+        guard let startTime = workoutStartTime else { return 0 }
+        return Date().timeIntervalSince(startTime)
+    }
+    
     private let db = Firestore.firestore()
+    
+    init() {
+        // Initialize with default values if needed
+    }
     
     func startNewWorkout(name: String) {
         let workout = Workout(
@@ -83,17 +92,51 @@ class WorkoutViewModel: ObservableObject {
     func finishWorkout() async throws {
         guard var workout = activeWorkout else { return }
         
-        workout.exercises = exercises
-        workout.duration = Date().timeIntervalSince(workoutStartTime ?? Date())
+        // First, update the workout object with current state
+        await MainActor.run {
+            // Create a deep copy of the current exercises state
+            var exercisesCopy: [Exercise] = []
+            for exercise in exercises {
+                var exerciseCopy = exercise
+                exerciseCopy.sets = exercise.sets // This creates a copy of the sets array
+                exercisesCopy.append(exerciseCopy)
+            }
+            
+            workout.exercises = exercisesCopy
+            workout.duration = workoutDuration
+            workout.createdAt = workoutStartTime ?? Date()
+        }
         
+        // Then save to Firestore
         let encodedWorkout = try Firestore.Encoder().encode(workout)
-        let workoutId = workout.id ?? UUID().uuidString
-        try await db.collection("workouts").document(workoutId).setData(encodedWorkout)
+        try await db.collection("workouts").document(workout.id ?? UUID().uuidString).setData(encodedWorkout)
         
-        // Reset state
+        // Finally, reset the state
+        await MainActor.run {
+            // Clear everything after successful save
+            self.activeWorkout = nil
+            self.exercises = []
+            self.isWorkoutInProgress = false
+            self.workoutStartTime = nil
+        }
+    }
+    
+    func discardWorkout() async {
         self.activeWorkout = nil
         self.exercises = []
         self.isWorkoutInProgress = false
         self.workoutStartTime = nil
+    }
+    
+    func calculateVolume() -> Int {
+        exercises.reduce(0) { total, exercise in
+            total + exercise.sets.reduce(0) { setTotal, set in
+                setTotal + Int(set.weight * Double(set.reps))
+            }
+        }
+    }
+    
+    func calculateTotalSets() -> Int {
+        exercises.reduce(0) { $0 + $1.sets.count }
     }
 } 
