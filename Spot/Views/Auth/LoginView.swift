@@ -1,42 +1,38 @@
 import SwiftUI
 
 struct LoginView: View {
+    @EnvironmentObject var authViewModel: AuthViewModel
     @State private var email = ""
     @State private var password = ""
     @State private var showSignUp = false
-    @EnvironmentObject var authViewModel: AuthViewModel
-    @State private var showError = false
+    @State private var showAlert = false
     @State private var errorMessage = ""
     
     var body: some View {
         NavigationStack {
-            VStack {
-                // Logo/Title
+            VStack(spacing: 20) {
+                // App logo/title
                 Text("Spot")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .padding(.vertical, 32)
+                    .font(.system(size: 40, weight: .bold))
+                    .padding(.top, 100)
                 
-                // Input fields
-                VStack(spacing: 24) {
+                VStack(spacing: 20) {
                     TextField("Email", text: $email)
                         .textFieldStyle(.roundedBorder)
                         .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
                     
                     SecureField("Password", text: $password)
                         .textFieldStyle(.roundedBorder)
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, 32)
                 
-                // Sign In Button
                 Button {
                     Task {
                         do {
                             try await authViewModel.signIn(withEmail: email, password: password)
                         } catch {
                             errorMessage = error.localizedDescription
-                            showError = true
+                            showAlert = true
                         }
                     }
                 } label: {
@@ -44,24 +40,23 @@ struct LoginView: View {
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 44)
+                        .frame(height: 50)
                         .background(Color.blue)
-                        .cornerRadius(8)
+                        .cornerRadius(10)
+                        .padding(.horizontal, 32)
                 }
-                .padding()
                 
-                // Sign Up Link
                 Button {
                     showSignUp = true
                 } label: {
-                    Text("Don't have an account? Create one")
+                    Text("Don't have an account? Sign Up")
                         .foregroundColor(.blue)
                 }
             }
             .navigationDestination(isPresented: $showSignUp) {
                 SignUpView()
             }
-            .alert("Error", isPresented: $showError) {
+            .alert("Error", isPresented: $showAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(errorMessage)

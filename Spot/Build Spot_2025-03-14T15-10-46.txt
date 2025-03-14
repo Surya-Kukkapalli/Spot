@@ -1,0 +1,21 @@
+
+Showing Recent Issues
+
+Prepare build
+error: Multiple commands produce '/Users/suryakukkapalli/Library/Developer/Xcode/DerivedData/Spot-dmwxlrvbloaszxhimsjzomxnrpcf/Build/Intermediates.noindex/Spot.build/Debug-iphonesimulator/Spot.build/Objects-normal/arm64/FeedView.stringsdata'
+    note: Target 'Spot' (project 'Spot') has Swift tasks not blocking downstream targets
+    note: Target 'Spot' (project 'Spot') has Swift tasks not blocking downstream targets
+
+
+Multiple commands produce '/Users/suryakukkapalli/Library/Developer/Xcode/DerivedData/Spot-dmwxlrvbloaszxhimsjzomxnrpcf/Build/Intermediates.noindex/Spot.build/Debug-iphonesimulator/Spot.build/Objects-normal/arm64/FeedView.stringsdata'
+
+
+Build target Spot of project Spot with configuration Debug
+warning: duplicate output file '/Users/suryakukkapalli/Library/Developer/Xcode/DerivedData/Spot-dmwxlrvbloaszxhimsjzomxnrpcf/Build/Intermediates.noindex/Spot.build/Debug-iphonesimulator/Spot.build/Objects-normal/arm64/FeedView.stringsdata' on task: SwiftDriver Compilation Spot normal arm64 com.apple.xcode.tools.swift.compiler (in target 'Spot' from project 'Spot')
+
+
+duplicate output file '/Users/suryakukkapalli/Library/Developer/Xcode/DerivedData/Spot-dmwxlrvbloaszxhimsjzomxnrpcf/Build/Intermediates.noindex/Spot.build/Debug-iphonesimulator/Spot.build/Objects-normal/arm64/FeedView.stringsdata' on task: SwiftDriver Compilation Spot normal arm64 com.apple.xcode.tools.swift.compiler
+
+
+
+Build failed    3/14/25, 3:10 PM    4.4 seconds
