@@ -130,23 +130,23 @@ struct ProfileView: View {
                     .padding()
                     
                     // Workout History
-                    VStack(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 1) {
                         Text("Workout History")
                             .font(.headline)
-                            .padding(.horizontal)
+                            .padding()
                         
                         if viewModel.isLoading {
                             ProgressView()
                                 .padding()
                         } else {
-                            LazyVStack(spacing: 16) {
+                            LazyVStack(spacing: 1) {
                                 ForEach(viewModel.workoutSummaries) { summary in
                                     WorkoutSummaryCard(workout: summary)
                                 }
                             }
-                            .padding(.horizontal)
                         }
                     }
+                    .background(Color(.systemGray6))
                 }
             }
             .navigationTitle(authViewModel.currentUser?.username ?? "")
@@ -181,6 +181,12 @@ struct ProfileView: View {
                 }
             }
             .task {
+                if let userId = authViewModel.currentUser?.id {
+                    print("Fetching workouts for user: \(userId)")
+                    await viewModel.fetchUserWorkouts(for: userId)
+                }
+            }
+            .refreshable {
                 if let userId = authViewModel.currentUser?.id {
                     await viewModel.fetchUserWorkouts(for: userId)
                 }

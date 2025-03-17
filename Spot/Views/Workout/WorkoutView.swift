@@ -168,40 +168,6 @@ struct EmptyWorkoutView: View {
             Text("Add an exercise to start your workout")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-            
-            /*
-            Button {
-                showExerciseSearch = true
-            } label: {
-                HStack {
-                    Image(systemName: "plus.circle.fill")
-                    Text("Add Exercise")
-                }
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(10)
-                .padding(.horizontal, 40)
-            }
-            */
-        }
-    }
-}
-
-// Add this new view for displaying exercise details
-struct ExerciseRowView: View {
-    let exercise: Exercise
-    let exerciseIndex: Int
-    
-    var body: some View {
-        VStack(alignment: .leading) {
-            Text(exercise.name)
-                .font(.headline)
-            Text("Sets: \(exercise.sets.count)")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
         }
     }
 }

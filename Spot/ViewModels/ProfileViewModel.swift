@@ -28,6 +28,7 @@ class ProfileViewModel: ObservableObject {
     
     func fetchUserWorkouts(for userId: String) async {
         isLoading = true
+        print("Starting workout fetch for user: \(userId)")
         
         do {
             let snapshot = try await db.collection("workout_summaries")
@@ -35,9 +36,31 @@ class ProfileViewModel: ObservableObject {
                 .order(by: "date", descending: true)
                 .getDocuments()
             
+            print("Found \(snapshot.documents.count) workout documents")
+            
             self.workoutSummaries = snapshot.documents.compactMap { document in
-                try? document.data(as: WorkoutSummary.self)
+                do {
+                    print("Attempting to decode document: \(document.documentID)")
+                    print("Document data: \(document.data())")
+                    
+                    // Create a mutable copy of the document data
+                    var data = document.data()
+                    // Add the document ID to the data dictionary
+                    data["id"] = document.documentID
+                    
+                    // Create a custom decoder that can handle Firestore types
+                    let decoder = Firestore.Decoder()
+                    let summary = try decoder.decode(WorkoutSummary.self, from: data)
+                    print("Successfully decoded workout: \(summary.workoutTitle)")
+                    return summary
+                } catch {
+                    print("Error decoding workout document: \(error)")
+                    print("Document data that failed to decode: \(document.data())")
+                    return nil
+                }
             }
+            
+            print("Successfully decoded \(self.workoutSummaries.count) workouts")
         } catch {
             print("Error fetching workouts: \(error)")
         }

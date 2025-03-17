@@ -2,7 +2,7 @@ import Foundation
 import FirebaseFirestore
 
 struct Workout: Identifiable, Codable {
-    @DocumentID var id: String?
+    let id: String
     let userId: String
     var name: String
     var exercises: [Exercise]
@@ -23,7 +23,7 @@ struct Workout: Identifiable, Codable {
              templateAuthorId, templatePrice, likes, comments, shares
     }
     
-    init(id: String? = nil,
+    init(id: String,
          userId: String,
          name: String,
          exercises: [Exercise] = [],

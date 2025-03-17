@@ -94,11 +94,16 @@ class WorkoutViewModel: ObservableObject {
         
         // First, update the workout object with current state
         await MainActor.run {
-            // Create a deep copy of the current exercises state
             var exercisesCopy: [Exercise] = []
             for exercise in exercises {
+                print("Processing exercise: \(exercise.name)")
+                print("Number of sets: \(exercise.sets.count)")
+                exercise.sets.forEach { set in
+                    print("Set: \(set.weight)lbs × \(set.reps) reps")
+                }
+                
                 var exerciseCopy = exercise
-                exerciseCopy.sets = exercise.sets // This creates a copy of the sets array
+                exerciseCopy.sets = exercise.sets
                 exercisesCopy.append(exerciseCopy)
             }
             
@@ -107,13 +112,89 @@ class WorkoutViewModel: ObservableObject {
             workout.createdAt = workoutStartTime ?? Date()
         }
         
-        // Then save to Firestore
+        // Save the workout
         let encodedWorkout = try Firestore.Encoder().encode(workout)
-        try await db.collection("workouts").document(workout.id ?? UUID().uuidString).setData(encodedWorkout)
+        try await db.collection("workouts").document(workout.id).setData(encodedWorkout)
         
-        // Finally, reset the state
+        // Create and save workout summary
+        if let currentUser = Auth.auth().currentUser {
+            let userDoc = try await db.collection("users").document(currentUser.uid).getDocument()
+            let user = try userDoc.data(as: User.self)
+            
+            // Create exercise summaries
+            let exerciseSummaries = workout.exercises.map { exercise -> WorkoutSummary.Exercise in
+                print("Creating summary for exercise: \(exercise.name)")
+                print("Number of sets to save: \(exercise.sets.count)")
+                
+                let sets = exercise.sets.map { set -> WorkoutSummary.Exercise.Set in
+                    print("Converting set: \(set.weight)lbs × \(set.reps) reps")
+                    return WorkoutSummary.Exercise.Set(
+                        weight: set.weight,
+                        reps: set.reps
+                    )
+                }
+                
+                return WorkoutSummary.Exercise(
+                    exerciseName: exercise.name,
+                    imageUrl: exercise.gifUrl,
+                    targetMuscle: exercise.target,
+                    sets: sets
+                )
+            }
+            
+            // Create personal records dictionary
+            let personalRecords: [String: PersonalRecord] = [:]
+            
+            // Create workout summary
+            let summary = WorkoutSummary(
+                id: workout.id,
+                userId: user.id ?? "",
+                username: user.username,
+                userProfileImageUrl: user.profileImageUrl,
+                workoutTitle: workout.name,
+                workoutNotes: workout.notes,
+                date: workout.createdAt,
+                duration: Int(workout.duration / 60), // Convert seconds to minutes
+                totalVolume: calculateVolume(),
+                fistBumps: 0,
+                comments: 0,
+                exercises: exerciseSummaries,
+                personalRecords: personalRecords
+            )
+            
+            print("Final workout summary:")
+            print("Number of exercises: \(summary.exercises.count)")
+            summary.exercises.forEach { exercise in
+                print("Exercise: \(exercise.exerciseName)")
+                print("Number of sets: \(exercise.sets.count)")
+                exercise.sets.forEach { set in
+                    print("Set: \(set.weight)lbs × \(set.reps) reps")
+                }
+            }
+            
+            // Save the summary
+            let encodedSummary = try Firestore.Encoder().encode(summary)
+            try await db.collection("workout_summaries")
+                .document(workout.id)
+                .setData(encodedSummary)
+            
+            // Update user's workout stats
+            var userData: [String: Any] = [:]
+            userData["workoutsCompleted"] = FieldValue.increment(Int64(1))
+            userData["totalWorkoutDuration"] = FieldValue.increment(Int64(workout.duration))
+            
+            if let currentWorkouts = user.workoutsCompleted {
+                let newAverage = ((user.totalWorkoutDuration ?? 0) + workout.duration) / Double(currentWorkouts + 1)
+                userData["averageWorkoutDuration"] = newAverage
+            }
+            
+            try await db.collection("users")
+                .document(currentUser.uid)
+                .updateData(userData)
+        }
+        
+        // Reset the workout state
         await MainActor.run {
-            // Clear everything after successful save
             self.activeWorkout = nil
             self.exercises = []
             self.isWorkoutInProgress = false
@@ -138,5 +219,42 @@ class WorkoutViewModel: ObservableObject {
     
     func calculateTotalSets() -> Int {
         exercises.reduce(0) { $0 + $1.sets.count }
+    }
+
+    
+    func createWorkoutSummary(from workout: Workout, user: User) -> WorkoutSummary {
+        // Create exercise summaries
+        let exerciseSummaries = workout.exercises.map { exercise -> WorkoutSummary.Exercise in
+            return WorkoutSummary.Exercise(
+                exerciseName: exercise.name,
+                imageUrl: exercise.gifUrl,
+                targetMuscle: exercise.target,
+                sets: exercise.sets.map { set in
+                    WorkoutSummary.Exercise.Set(
+                        weight: set.weight,
+                        reps: set.reps
+                    )
+                }
+            )
+        }
+        
+        // Create personal records dictionary
+        let personalRecords: [String: PersonalRecord] = [:]
+        
+        return WorkoutSummary(
+            id: workout.id,
+            userId: user.id ?? "",
+            username: user.username,
+            userProfileImageUrl: user.profileImageUrl,
+            workoutTitle: workout.name,
+            workoutNotes: workout.notes,
+            date: workout.createdAt,
+            duration: Int(workout.duration / 60), // Convert seconds to minutes
+            totalVolume: calculateVolume(),
+            fistBumps: workout.likes,
+            comments: workout.comments,
+            exercises: exerciseSummaries,
+            personalRecords: personalRecords
+        )
     }
 } 
