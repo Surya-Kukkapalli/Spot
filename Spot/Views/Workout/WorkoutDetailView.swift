@@ -140,76 +140,90 @@ private struct WorkoutStatsView: View {
     let workout: WorkoutSummary
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .center, spacing: 16) {
             HStack(spacing: 48) {
-                VStack(alignment: .leading) {
+                VStack(alignment: .center) {
                     Text("\(workout.duration)")
-                        .font(.title)
+                        .font(.title3)
                         .bold()
                     Text("minutes")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
                 
-                VStack(alignment: .leading) {
+                VStack(alignment: .center) {
                     Text("\(workout.totalVolume)")
-                        .font(.title)
+                        .font(.title3)
                         .bold()
                     Text("volume")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
+
+                if let records = workout.personalRecords, !records.isEmpty {
+                    VStack(alignment: .center) {
+                        Text("\(records.count)")
+                            .font(.title3)
+                            .bold()
+                        Text("PRs")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
             .padding(.vertical, 8)
+
+            Divider()
+                .padding(.vertical, 2)
             
-            Text("Muscle Split")
-                .font(.title3)
-                .padding(.top, 16)
+            // Text("Muscle Split")
+            //     .font(.title3)
+            //     .padding(.top, 16)
             
-            // Debug print for muscle split data
-            .onAppear {
-                print("Muscle Split Data:")
-                workout.muscleSplit.forEach { split in
-                    print("Muscle: \(split.muscle), Sets: \(split.sets)")
-                }
+            // // Debug print for muscle split data
+            // .onAppear {
+            //     print("Muscle Split Data:")
+            //     workout.muscleSplit.forEach { split in
+            //         print("Muscle: \(split.muscle), Sets: \(split.sets)")
+            //     }
                 
-                print("\nExercise Data:")
-                workout.exercises.forEach { exercise in
-                    print("Exercise: \(exercise.exerciseName)")
-                    print("Target Muscle: \(exercise.targetMuscle)")
-                    print("Sets count: \(exercise.sets.count)")
-                    exercise.sets.forEach { set in
-                        print("Set: \(set.weight)lbs × \(set.reps) reps")
-                    }
-                }
-            }
+            //     print("\nExercise Data:")
+            //     workout.exercises.forEach { exercise in
+            //         print("Exercise: \(exercise.exerciseName)")
+            //         print("Target Muscle: \(exercise.targetMuscle)")
+            //         print("Sets count: \(exercise.sets.count)")
+            //         exercise.sets.forEach { set in
+            //             print("Set: \(set.weight)lbs × \(set.reps) reps")
+            //         }
+            //     }
+            // }
             
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(workout.muscleSplit, id: \.muscle) { split in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(split.muscle)
-                                .font(.subheadline)
-                            Spacer()
-                            Text("\(split.sets) sets")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
+            // VStack(alignment: .leading, spacing: 8) {
+            //     ForEach(workout.muscleSplit, id: \.muscle) { split in
+            //         VStack(alignment: .leading, spacing: 4) {
+            //             HStack {
+            //                 Text(split.muscle)
+            //                     .font(.subheadline)
+            //                 Spacer()
+            //                 Text("\(split.sets) sets")
+            //                     .font(.subheadline)
+            //                     .foregroundColor(.secondary)
+            //             }
                         
-                        GeometryReader { geometry in
-                            Rectangle()
-                                .fill(Color.blue)
-                                .frame(
-                                    width: geometry.size.width * CGFloat(split.sets) / CGFloat(workout.exercises.reduce(0) { $0 + $1.sets.count }),
-                                    height: 8
-                                )
-                        }
-                        .frame(height: 8)
-                        .background(Color(.systemGray5))
-                        .cornerRadius(4)
-                    }
-                }
-            }
+            //             GeometryReader { geometry in
+            //                 Rectangle()
+            //                     .fill(Color.blue)
+            //                     .frame(
+            //                         width: geometry.size.width * CGFloat(split.sets) / CGFloat(workout.exercises.reduce(0) { $0 + $1.sets.count }),
+            //                         height: 8
+            //                     )
+            //             }
+            //             .frame(height: 8)
+            //             .background(Color(.systemGray5))
+            //             .cornerRadius(4)
+            //         }
+            //     }
+            // }
         }
     }
 }
@@ -340,6 +354,21 @@ private struct ExerciseRowView: View {
                         .font(.subheadline)
                         .foregroundColor(.gray)
                 }
+                
+                if exercise.hasPR {
+                    Spacer()
+                    HStack {
+                        Image(systemName: "trophy.fill")
+                            .foregroundColor(.yellow)
+                        Text("New PR!")
+                            .font(.caption)
+                            .foregroundColor(.yellow)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.yellow.opacity(0.2))
+                    .cornerRadius(8)
+                }
             }
             
             // Sets table header
@@ -373,6 +402,9 @@ private struct ExerciseRowView: View {
                     if set.isPR {
                         Image(systemName: "trophy.fill")
                             .foregroundColor(.yellow)
+                            .onAppear {
+                                showPRTooltip(exercise: exercise.exerciseName, weight: set.weight, reps: set.reps)
+                            }
                     }
                 }
                 .font(.subheadline)
