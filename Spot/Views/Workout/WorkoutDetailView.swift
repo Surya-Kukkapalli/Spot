@@ -402,9 +402,9 @@ private struct ExerciseRowView: View {
                     if set.isPR {
                         Image(systemName: "trophy.fill")
                             .foregroundColor(.yellow)
-                            .onAppear {
-                                showPRTooltip(exercise: exercise.exerciseName, weight: set.weight, reps: set.reps)
-                            }
+                            // .onAppear {
+                            //     showPRTooltip(exercise: exercise.exerciseName, weight: set.weight, reps: set.reps)
+                            // }
                     }
                 }
                 .font(.subheadline)

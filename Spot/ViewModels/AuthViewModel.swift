@@ -161,38 +161,42 @@ class AuthViewModel: ObservableObject {
         }
     }
     
-    func updateProfile(bio: String? = nil, profileImageUrl: String? = nil) async throws {
-        guard let uid = userSession?.uid else {
-            throw AuthError.notSignedIn
+    @MainActor
+    func updateProfile(username: String, firstName: String, lastName: String, bio: String?) async throws {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw AuthError.userNotFound
         }
         
-        var data: [String: Any] = [:]
+        let userRef = db.collection("users").document(userId)
         
-        if let bio = bio {
-            data["bio"] = bio
-        }
-        
-        if let profileImageUrl = profileImageUrl {
-            data["profileImageUrl"] = profileImageUrl
-        }
-        
-        let docRef = db.collection("users").document(uid)
-        
-        do {
-            try await docRef.setData(data, merge: true)
-            print("Profile updated successfully")
+        // Check if username is already taken (if it's different from current username)
+        if let currentUser = currentUser, username != currentUser.username {
+            let snapshot = try await db.collection("users")
+                .whereField("username", isEqualTo: username)
+                .getDocuments()
             
-            // Fetch updated user data immediately
-            let updatedDoc = try await docRef.getDocument()
-            if let updatedUser = try? updatedDoc.data(as: User.self) {
-                await MainActor.run {
-                    self.currentUser = updatedUser
-                    print("Current user updated with bio: \(updatedUser.bio ?? "nil")")
-                }
+            if !snapshot.documents.isEmpty {
+                throw AuthError.usernameAlreadyExists
             }
-        } catch {
-            print("Error updating profile: \(error)")
-            throw error
+        }
+        
+        // Update user data
+        let userData: [String: Any] = [
+            "username": username,
+            "firstName": firstName,
+            "lastName": lastName,
+            "bio": bio ?? NSNull()
+        ]
+        
+        try await userRef.updateData(userData)
+        
+        // Update local user object
+        if var updatedUser = currentUser {
+            updatedUser.username = username
+            updatedUser.firstName = firstName
+            updatedUser.lastName = lastName
+            updatedUser.bio = bio
+            self.currentUser = updatedUser
         }
     }
     
@@ -215,11 +219,45 @@ class AuthViewModel: ObservableObject {
         
         try await db.collection("users").document(uid).setData(defaultData, merge: true)
     }
+    
+    @MainActor
+    func deleteUserData() async throws {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw AuthError.userNotFound
+        }
+        
+        // Delete user's workouts
+        let workoutDocs = try await db.collection("workout_summaries")
+            .whereField("userId", isEqualTo: userId)
+            .getDocuments()
+        
+        for doc in workoutDocs.documents {
+            try await doc.reference.delete()
+        }
+        
+        // Delete user's personal records
+        let prDocs = try await db.collection("users")
+            .document(userId)
+            .collection("personal_records")
+            .getDocuments()
+        
+        for doc in prDocs.documents {
+            try await doc.reference.delete()
+        }
+        
+        // Delete user document
+        try await db.collection("users").document(userId).delete()
+        
+        // Clear local state
+        self.userSession = nil
+        self.currentUser = nil
+    }
 }
 
 enum AuthError: LocalizedError {
     case usernameAlreadyExists
     case notSignedIn
+    case userNotFound
     
     var errorDescription: String? {
         switch self {
@@ -227,6 +265,8 @@ enum AuthError: LocalizedError {
             return "This username is already taken"
         case .notSignedIn:
             return "You must be signed in to perform this action"
+        case .userNotFound:
+            return "User not found. Please sign in again."
         }
     }
 } 

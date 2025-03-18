@@ -50,6 +50,22 @@ struct WorkoutSummaryCard: View {
                     .padding(.top, -1)
             }
             
+            // PR Banner
+            if let records = workout.personalRecords, !records.isEmpty,
+               let firstPR = records.values.first {
+                HStack(spacing: 8) {
+                    Image(systemName: "trophy.fill")
+                        .foregroundColor(.yellow)
+                    Text("\(workout.username) Hit a PR on \(firstPR.exerciseName)")
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.yellow.opacity(0.15))
+                .cornerRadius(8)
+            }
+            
             // Stats row
             HStack(spacing: 16) {
                 Label("\(workout.duration)min", systemImage: "clock")

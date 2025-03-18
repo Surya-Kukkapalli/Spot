@@ -1,24 +1,33 @@
 import SwiftUI
 
 struct EditProfileView: View {
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) var dismiss
     @EnvironmentObject var authViewModel: AuthViewModel
     
+    @State private var username: String = ""
+    @State private var firstName: String = ""
+    @State private var lastName: String = ""
     @State private var bio: String = ""
     @State private var showAlert = false
-    @State private var errorMessage = ""
+    @State private var alertMessage = ""
     
     var body: some View {
         NavigationStack {
             Form {
-                Section(header: Text("Bio")) {
+                Section(header: Text("Basic Info")) {
+                    TextField("Username", text: $username)
+                    TextField("First Name", text: $firstName)
+                    TextField("Last Name", text: $lastName)
+                }
+                
+                Section(header: Text("About")) {
                     TextEditor(text: $bio)
-                        .frame(height: 100)
+                        .frame(height: 100, alignment: .top)
                 }
             }
             .navigationTitle("Edit Profile")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .toolbar(content: {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
                         dismiss()
@@ -29,23 +38,33 @@ struct EditProfileView: View {
                     Button("Save") {
                         Task {
                             do {
-                                try await authViewModel.updateProfile(bio: bio)
+                                try await authViewModel.updateProfile(
+                                    username: username,
+                                    firstName: firstName,
+                                    lastName: lastName,
+                                    bio: bio
+                                )
                                 dismiss()
                             } catch {
-                                errorMessage = error.localizedDescription
+                                alertMessage = error.localizedDescription
                                 showAlert = true
                             }
                         }
                     }
                 }
-            }
+            })
             .alert("Error", isPresented: $showAlert) {
                 Button("OK", role: .cancel) { }
             } message: {
-                Text(errorMessage)
+                Text(alertMessage)
             }
             .onAppear {
-                bio = authViewModel.currentUser?.bio ?? ""
+                if let user = authViewModel.currentUser {
+                    username = user.username
+                    firstName = user.firstName
+                    lastName = user.lastName
+                    bio = user.bio ?? ""
+                }
             }
         }
     }
