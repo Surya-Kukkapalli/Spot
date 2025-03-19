@@ -14,8 +14,8 @@ struct MainTabView: View {
             
             DiscoveryView()
                 .tabItem {
-                    Image(systemName: "magnifyingglass")
-                    Text("Discover")
+                    Image(systemName: "community.fill")
+                    Text("Community")
                 }
                 .tag(1)
             

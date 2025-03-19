@@ -4,17 +4,23 @@ import PhotosUI
 struct SaveWorkoutView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var viewModel: WorkoutViewModel
+    @StateObject private var programViewModel = WorkoutProgramViewModel()
     @State private var workoutTitle: String = ""
     @State private var description: String = ""
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var selectedImages: [UIImage] = []
     @State private var showingDiscardAlert = false
+    @State private var saveAsTemplate = false
+    @State private var makeTemplatePublic = false
     
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     TextField("Workout title", text: $workoutTitle)
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Description (optional)", text: $description)
                         .foregroundColor(.secondary)
                 }
                 
@@ -51,72 +57,42 @@ struct SaveWorkoutView: View {
                 }
                 
                 Section {
-                    PhotosPicker(selection: $selectedItems,
-                               matching: .images) {
-                        HStack {
-                            Image(systemName: "photo")
-                                .font(.system(size: 24))
-                            Text("Add a photo / video")
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .frame(height: 100)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(8)
-                    }
-                }
-                
-                Section("Description") {
-                    TextEditor(text: $description)
-                        .frame(height: 100)
-                        .foregroundColor(description.isEmpty ? .secondary : .primary)
-                        .overlay {
-                            if description.isEmpty {
-                                Text("How did your workout go? Leave some notes here...")
-                                    .foregroundColor(.secondary)
-                                    .padding(.top, 8)
-                                    .padding(.leading, 4)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                }
-                
-                Section {
-                    NavigationLink {
-                        Text("Visibility settings coming soon")
-                    } label: {
-                        HStack {
-                            Text("Visibility")
-                            Spacer()
-                            Text("Everyone")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-                
-                Section {
-                    Button("Discard Workout", role: .destructive) {
-                        showingDiscardAlert = true
+                    Toggle("Save as Template", isOn: $saveAsTemplate)
+                    
+                    if saveAsTemplate {
+                        Toggle("Make Template Public", isOn: $makeTemplatePublic)
                     }
                 }
             }
             .navigationTitle("Save Workout")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Back") {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        Task {
-                            await saveWorkout()
+            .navigationBarItems(
+                leading: Button("Cancel") {
+                    showingDiscardAlert = true
+                },
+                trailing: Button("Save") {
+                    Task {
+                        if let workout = viewModel.activeWorkout {
+                            var workoutToSave = workout
+                            workoutToSave.name = workoutTitle
+                            workoutToSave.notes = description.isEmpty ? nil : description
+                            
+                            try? await viewModel.finishWorkout()
+                            
+                            if saveAsTemplate {
+                                try? await programViewModel.createTemplate(
+                                    from: workoutToSave,
+                                    description: description.isEmpty ? nil : description,
+                                    isPublic: makeTemplatePublic
+                                )
+                            }
+                            
+                            dismiss()
                         }
                     }
                 }
-            }
-            .alert("Discard Workout", isPresented: $showingDiscardAlert) {
+                .disabled(workoutTitle.isEmpty)
+            )
+            .alert("Discard Workout?", isPresented: $showingDiscardAlert) {
                 Button("Cancel", role: .cancel) { }
                 Button("Discard", role: .destructive) {
                     Task {
@@ -124,27 +100,20 @@ struct SaveWorkoutView: View {
                         dismiss()
                     }
                 }
-            } message: {
-                Text("Are you sure you want to discard this workout? This action cannot be undone.")
             }
         }
     }
     
-    private func saveWorkout() async {
-        viewModel.activeWorkout?.name = workoutTitle
-        viewModel.activeWorkout?.notes = description
-        try? await viewModel.finishWorkout()
-        dismiss()
-    }
-    
     private func formatDuration(_ duration: TimeInterval) -> String {
         let minutes = Int(duration) / 60
-        return "\(minutes)min"
+        let seconds = Int(duration) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
     
     private func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "dd MMM yyyy, h:mm a"
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
         return formatter.string(from: date)
     }
 }

@@ -9,31 +9,24 @@ struct WorkoutView: View {
     
     var body: some View {
         NavigationStack {
-            content
+            if viewModel.isWorkoutInProgress {
+                ActiveWorkoutView(
+                    viewModel: viewModel,
+                    showExerciseSearch: $showExerciseSearch,
+                    showSaveWorkout: $showSaveWorkout
+                )
                 .navigationTitle("Log Workout")
-                .sheet(isPresented: $showNewWorkoutSheet) {
-                    NewWorkoutSheet { name in
-                        viewModel.startNewWorkout(name: name)
-                    }
-                }
                 .sheet(isPresented: $showExerciseSearch) {
                     NavigationStack {
-                        ExerciseView(workoutViewModel: viewModel)
+                        ExerciseSearchView(workoutViewModel: viewModel)
                     }
                 }
-        }
-    }
-    
-    @ViewBuilder
-    private var content: some View {
-        if viewModel.isWorkoutInProgress {
-            ActiveWorkoutView(
-                viewModel: viewModel,
-                showExerciseSearch: $showExerciseSearch,
-                showSaveWorkout: $showSaveWorkout
-            )
-        } else {
-            NoWorkoutView(showNewWorkoutSheet: $showNewWorkoutSheet)
+                .sheet(isPresented: $showSaveWorkout) {
+                    SaveWorkoutView(viewModel: viewModel)
+                }
+            } else {
+                WorkoutProgramView()
+            }
         }
     }
 }
@@ -111,9 +104,6 @@ private struct ActiveWorkoutView: View {
                         .stroke(Color.blue, lineWidth: 1)
                 )
         }
-        .sheet(isPresented: $showSaveWorkout) {
-            SaveWorkoutView(viewModel: viewModel)
-        }
     }
     
     // Helper functions
@@ -168,34 +158,13 @@ struct EmptyWorkoutView: View {
             Text("Add an exercise to start your workout")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-        }
-    }
-}
-
-// Add this struct after EmptyWorkoutView
-struct NoWorkoutView: View {
-    @Binding var showNewWorkoutSheet: Bool
-    
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "dumbbell.fill")
-                .font(.system(size: 50))
-                .foregroundColor(.gray)
-            
-            Text("No Active Workout")
-                .font(.title2)
-                .fontWeight(.semibold)
-            
-            Text("Start a new workout to begin tracking")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
             
             Button {
-                showNewWorkoutSheet = true
+                showExerciseSearch = true
             } label: {
                 HStack {
                     Image(systemName: "plus.circle.fill")
-                    Text("Start New Workout")
+                    Text("Add Exercise")
                 }
                 .font(.headline)
                 .frame(maxWidth: .infinity)
@@ -299,34 +268,14 @@ struct WorkoutExerciseView: View {
             
             // Sets List
             ForEach(exercise.sets.indices, id: \.self) { setIndex in
-                if workoutViewModel.exercises.indices.contains(exerciseIndex) &&
-                   workoutViewModel.exercises[exerciseIndex].sets.indices.contains(setIndex) {
-                    SetRowView(
-                        set: Binding(
-                            get: { 
-                                guard workoutViewModel.exercises.indices.contains(exerciseIndex),
-                                      workoutViewModel.exercises[exerciseIndex].sets.indices.contains(setIndex) else {
-                                    return ExerciseSet(id: UUID().uuidString)
-                                }
-                                return workoutViewModel.exercises[exerciseIndex].sets[setIndex]
-                            },
-                            set: { newValue in
-                                guard workoutViewModel.exercises.indices.contains(exerciseIndex),
-                                      workoutViewModel.exercises[exerciseIndex].sets.indices.contains(setIndex) else {
-                                    return
-                                }
-                                workoutViewModel.exercises[exerciseIndex].sets[setIndex] = newValue
-                            }
-                        ),
-                        setNumber: setIndex + 1,
-                        previousSet: setIndex > 0 ? exercise.sets[setIndex - 1] : nil,
-                        onDelete: {
-                            withAnimation {
-                                workoutViewModel.removeSet(from: exerciseIndex, at: setIndex)
-                            }
-                        }
-                    )
-                }
+                SetRow(
+                    set: $workoutViewModel.exercises[exerciseIndex].sets[setIndex],
+                    setNumber: setIndex + 1,
+                    previousSet: nil,
+                    onDelete: {
+                        workoutViewModel.exercises[exerciseIndex].sets.remove(at: setIndex)
+                    }
+                )
             }
             
             // Add Set Button
@@ -334,23 +283,19 @@ struct WorkoutExerciseView: View {
                 workoutViewModel.addSet(to: exerciseIndex)
             } label: {
                 HStack {
-                    Image(systemName: "plus")
+                    Image(systemName: "plus.circle.fill")
                     Text("Add Set")
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
-                .background(Color(.systemGray6))
-                .cornerRadius(8)
+                .foregroundColor(.blue)
             }
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(Color(.systemGray6))
         .cornerRadius(10)
     }
 }
 
-// Add this new view for the set row
-struct SetRowView: View {
+struct SetRow: View {
     @Binding var set: ExerciseSet
     let setNumber: Int
     let previousSet: ExerciseSet?
@@ -358,42 +303,41 @@ struct SetRowView: View {
     
     var body: some View {
         HStack {
-            // Set Number
             Text("\(setNumber)")
+                .font(.subheadline)
                 .frame(width: 40, alignment: .leading)
-                .foregroundColor(.secondary)
             
-            // Previous Set
-            Text(previousSet.map { "\(Int($0.weight)) × \($0.reps)" } ?? "-")
-                .frame(width: 80)
-                .foregroundColor(.secondary)
+            if let previous = previousSet {
+                Text("\(Int(previous.weight))×\(previous.reps)")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(width: 80)
+            } else {
+                Text("-")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(width: 80)
+            }
             
-            // Weight
-            TextField("0", value: $set.weight, formatter: NumberFormatter())
+            TextField("0", value: $set.weight, format: .number)
                 .keyboardType(.decimalPad)
-                .frame(width: 60)
-                .multilineTextAlignment(.center)
                 .textFieldStyle(.roundedBorder)
+                .frame(width: 60)
             
-            // Reps
-            TextField("0", value: $set.reps, formatter: NumberFormatter())
+            TextField("0", value: $set.reps, format: .number)
                 .keyboardType(.numberPad)
-                .frame(width: 60)
-                .multilineTextAlignment(.center)
                 .textFieldStyle(.roundedBorder)
+                .frame(width: 60)
             
             Spacer()
             
-            // Completion Checkbox
             Button {
                 set.isCompleted.toggle()
             } label: {
                 Image(systemName: set.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(set.isCompleted ? .blue : .gray)
-                    .font(.title3)
+                    .foregroundColor(set.isCompleted ? .green : .gray)
             }
         }
-        .padding(.vertical, 4)
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) {
                 onDelete()
