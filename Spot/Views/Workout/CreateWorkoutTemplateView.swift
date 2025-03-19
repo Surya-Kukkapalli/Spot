@@ -3,7 +3,7 @@ import FirebaseAuth
 
 struct CreateWorkoutTemplateView: View {
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var viewModel = WorkoutProgramViewModel()
+    @ObservedObject var viewModel: WorkoutProgramViewModel
     @StateObject private var workoutViewModel = WorkoutViewModel()
     @State private var workoutTitle = ""
     @State private var description = ""
@@ -63,6 +63,7 @@ struct CreateWorkoutTemplateView: View {
             )
             
             try? await viewModel.createTemplate(from: workout, description: description, isPublic: false)
+            await viewModel.fetchUserTemplates() // Refresh templates
             dismiss()
         }
     }
@@ -196,5 +197,5 @@ struct WorkoutTemplateExerciseRow: View {
 }
 
 #Preview {
-    CreateWorkoutTemplateView()
+    CreateWorkoutTemplateView(viewModel: WorkoutProgramViewModel())
 } 

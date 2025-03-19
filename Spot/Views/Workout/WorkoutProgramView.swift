@@ -2,9 +2,9 @@ import SwiftUI
 
 struct WorkoutProgramView: View {
     @StateObject private var viewModel = WorkoutProgramViewModel()
+    @Environment(\.workoutViewModel) private var workoutViewModel
     @State private var selectedTab = 0
     @State private var showNewProgramSheet = false
-    @State private var showNewWorkoutSheet = false
     @State private var showCreateTemplate = false
     @State private var showExerciseSearch = false
     @State private var selectedTemplate: WorkoutTemplate?
@@ -20,7 +20,7 @@ struct WorkoutProgramView: View {
                         .padding(.horizontal)
                     
                     Button(action: {
-                        showNewWorkoutSheet = true
+                        startEmptyWorkout()
                     }) {
                         HStack {
                             Image(systemName: "plus")
@@ -78,6 +78,7 @@ struct WorkoutProgramView: View {
                     .padding(.horizontal)
                 }
                 
+                // Content based on selected tab
                 ScrollView {
                     if selectedTab == 0 {
                         // Programs List
@@ -85,21 +86,6 @@ struct WorkoutProgramView: View {
                             ForEach(viewModel.programs) { program in
                                 ProgramCard(program: program)
                             }
-                            
-                            Button(action: {
-                                showNewProgramSheet = true
-                            }) {
-                                HStack {
-                                    Image(systemName: "plus")
-                                    Text("Make a new Program")
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .cornerRadius(10)
-                                .foregroundColor(.blue)
-                            }
-                            .padding(.horizontal)
                         }
                     } else {
                         // Workouts/Templates List
@@ -130,29 +116,33 @@ struct WorkoutProgramView: View {
             }
             .navigationTitle("Workout")
             .navigationDestination(for: WorkoutTemplate.self) { template in
-                WorkoutTemplateDetailView(template: template)
+                if let viewModel = workoutViewModel {
+                    WorkoutTemplateDetailView(template: template)
+                        .environment(\.workoutViewModel, viewModel)
+                }
             }
             .task {
                 await viewModel.fetchUserPrograms()
                 await viewModel.fetchUserTemplates()
             }
             .sheet(isPresented: $showNewProgramSheet) {
-                NewProgramSheet()
-            }
-            .sheet(isPresented: $showNewWorkoutSheet) {
-                NewWorkoutSheet { name in
-                    // Handle new workout creation
-                }
+                NewProgramSheet(viewModel: viewModel)
             }
             .sheet(isPresented: $showCreateTemplate) {
-                CreateWorkoutTemplateView()
+                CreateWorkoutTemplateView(viewModel: viewModel)
             }
             .sheet(isPresented: $showExerciseSearch) {
                 NavigationStack {
-                    ExerciseView(workoutViewModel: WorkoutViewModel())
+                    ExerciseSearchView(workoutViewModel: workoutViewModel ?? WorkoutViewModel())
                 }
             }
         }
+    }
+    
+    private func startEmptyWorkout() {
+        guard let viewModel = workoutViewModel else { return }
+        viewModel.startNewWorkout(name: "")  // Empty name, will be set in SaveWorkoutView
+        viewModel.isWorkoutInProgress = true
     }
 }
 
@@ -230,7 +220,7 @@ struct WorkoutTemplateCard: View {
 
 struct NewProgramSheet: View {
     @Environment(\.dismiss) var dismiss
-    @StateObject private var viewModel = WorkoutProgramViewModel()
+    @ObservedObject var viewModel: WorkoutProgramViewModel
     @State private var name = ""
     @State private var description = ""
     @State private var selectedTemplates: Set<String> = []
@@ -284,14 +274,12 @@ struct NewProgramSheet: View {
                             description: description.isEmpty ? nil : description,
                             templates: templates
                         )
+                        await viewModel.fetchUserPrograms() // Refresh programs
                         dismiss()
                     }
                 }
                 .disabled(name.isEmpty || selectedTemplates.isEmpty)
             )
-            .task {
-                await viewModel.fetchUserTemplates()
-            }
         }
     }
 }

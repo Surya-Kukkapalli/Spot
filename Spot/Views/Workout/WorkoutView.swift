@@ -3,13 +3,13 @@ import FirebaseFirestore
 
 struct WorkoutView: View {
     @StateObject private var viewModel = WorkoutViewModel()
-    @State private var showNewWorkoutSheet = false
     @State private var showExerciseSearch = false
     @State private var showSaveWorkout = false
     
     var body: some View {
         NavigationStack {
             if viewModel.isWorkoutInProgress {
+                let _ = print("DEBUG: Showing ActiveWorkoutView with \(viewModel.exercises.count) exercises")
                 ActiveWorkoutView(
                     viewModel: viewModel,
                     showExerciseSearch: $showExerciseSearch,
@@ -24,10 +24,29 @@ struct WorkoutView: View {
                 .sheet(isPresented: $showSaveWorkout) {
                     SaveWorkoutView(viewModel: viewModel)
                 }
+                .onAppear {
+                    let _ = print("DEBUG: ActiveWorkoutView appeared")
+                }
             } else {
+                let _ = print("DEBUG: Showing WorkoutProgramView")
                 WorkoutProgramView()
+                    .environment(\.workoutViewModel, viewModel)
             }
         }
+        .onChange(of: viewModel.isWorkoutInProgress) { newValue in
+            print("DEBUG: isWorkoutInProgress changed to: \(newValue)")
+        }
+    }
+}
+
+private struct WorkoutViewModelKey: EnvironmentKey {
+    static let defaultValue: WorkoutViewModel? = nil
+}
+
+extension EnvironmentValues {
+    var workoutViewModel: WorkoutViewModel? {
+        get { self[WorkoutViewModelKey.self] }
+        set { self[WorkoutViewModelKey.self] = newValue }
     }
 }
 
@@ -50,8 +69,8 @@ private struct ActiveWorkoutView: View {
                 
                 if viewModel.exercises.isEmpty {
                     // Empty State
-                    EmptyWorkoutView(showExerciseSearch: $showExerciseSearch)
-                        .padding(.vertical, 40)
+                    // EmptyWorkoutView(showExerciseSearch: $showExerciseSearch)
+                    //     .padding(.vertical, 40)
                 } else {
                     // Exercise List
                     LazyVStack(spacing: 12) {

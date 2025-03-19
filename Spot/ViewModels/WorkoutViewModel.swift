@@ -24,6 +24,7 @@ class WorkoutViewModel: ObservableObject {
     }
     
     func startNewWorkout(name: String) {
+        print("DEBUG: Starting new workout with name: \(name)")
         let workout = Workout(
             id: UUID().uuidString,
             userId: Auth.auth().currentUser?.uid ?? "",
@@ -38,12 +39,22 @@ class WorkoutViewModel: ObservableObject {
         )
         
         self.activeWorkout = workout
-        self.isWorkoutInProgress = true
+        self.exercises = []
         self.workoutStartTime = Date()
+        self.isWorkoutInProgress = true
+        print("DEBUG: Workout initialized with ID: \(workout.id)")
     }
     
     func addExercise(_ exercise: Exercise) {
         exercises.append(exercise)
+        print("DEBUG: Added exercise: \(exercise.name). Total exercises: \(exercises.count)")
+        
+        // Update active workout's exercises
+        if var workout = activeWorkout {
+            workout.exercises = exercises
+            activeWorkout = workout
+            print("DEBUG: Updated active workout exercises")
+        }
     }
     
     func addExercise(name: String, equipment: Equipment) {

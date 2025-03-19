@@ -2,7 +2,8 @@ import SwiftUI
 
 struct WorkoutTemplateDetailView: View {
     let template: WorkoutTemplate
-    @StateObject private var viewModel = WorkoutViewModel()
+    @Environment(\.workoutViewModel) private var workoutViewModel
+    @Environment(\.dismiss) private var dismiss
     @State private var showingStartWorkoutAlert = false
     
     var body: some View {
@@ -98,9 +99,59 @@ struct WorkoutTemplateDetailView: View {
     }
     
     private func startWorkout() {
+        guard let viewModel = workoutViewModel else {
+            print("DEBUG: workoutViewModel is nil")
+            return
+        }
+        
+        print("DEBUG: Starting workout from template: \(template.name)")
+        print("DEBUG: Template has \(template.exercises.count) exercises")
+        
+        // Start a new workout with the template name
         viewModel.startNewWorkout(name: template.name)
-        viewModel.exercises = template.exercises
+        
+        // Create new Exercise instances with empty sets for logging
+        let exercises = template.exercises.map { templateExercise in
+            var exercise = Exercise(
+                id: UUID().uuidString,
+                name: templateExercise.name,
+                sets: [],
+                equipment: templateExercise.equipment,
+                gifUrl: templateExercise.gifUrl,
+                target: templateExercise.target,
+                secondaryMuscles: templateExercise.secondaryMuscles,
+                notes: templateExercise.notes
+            )
+            // Add a default empty set to start logging
+            exercise.sets.append(ExerciseSet(id: UUID().uuidString))
+            return exercise
+        }
+        
+        print("DEBUG: Created \(exercises.count) new exercises for workout")
+        
+        // Add all exercises to the workout
+        exercises.forEach { viewModel.addExercise($0) }
+        print("DEBUG: Added exercises to workout. Total exercises: \(viewModel.exercises.count)")
+        
+        // Update the active workout with template info
+        if var workout = viewModel.activeWorkout {
+            workout.name = template.name
+            workout.notes = template.description
+            viewModel.activeWorkout = workout
+            print("DEBUG: Updated active workout with template info")
+        } else {
+            print("DEBUG: Error: activeWorkout is nil after startNewWorkout")
+        }
+        
+        // Start the workout
         viewModel.isWorkoutInProgress = true
+        print("DEBUG: Set isWorkoutInProgress to true")
+        
+        // Force view update and dismiss
+        DispatchQueue.main.async {
+            dismiss()
+            print("DEBUG: Dismissed template view")
+        }
     }
 }
 

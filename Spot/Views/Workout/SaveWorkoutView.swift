@@ -18,10 +18,10 @@ struct SaveWorkoutView: View {
             Form {
                 Section {
                     TextField("Workout title", text: $workoutTitle)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.primary)
                     
                     TextField("Description (optional)", text: $description)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.primary)
                 }
                 
                 Section {
@@ -75,6 +75,7 @@ struct SaveWorkoutView: View {
                             var workoutToSave = workout
                             workoutToSave.name = workoutTitle
                             workoutToSave.notes = description.isEmpty ? nil : description
+                            workoutToSave.exercises = viewModel.exercises // Use the exercises from viewModel
                             
                             try? await viewModel.finishWorkout()
                             
@@ -84,6 +85,7 @@ struct SaveWorkoutView: View {
                                     description: description.isEmpty ? nil : description,
                                     isPublic: makeTemplatePublic
                                 )
+                                await programViewModel.fetchUserTemplates() // Refresh templates
                             }
                             
                             dismiss()
@@ -95,19 +97,19 @@ struct SaveWorkoutView: View {
             .alert("Discard Workout?", isPresented: $showingDiscardAlert) {
                 Button("Cancel", role: .cancel) { }
                 Button("Discard", role: .destructive) {
-                    Task {
-                        await viewModel.discardWorkout()
-                        dismiss()
-                    }
+                    dismiss()
                 }
+            } message: {
+                Text("Are you sure you want to discard this workout? This action cannot be undone.")
             }
         }
     }
     
     private func formatDuration(_ duration: TimeInterval) -> String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%d:%02d", minutes, seconds)
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        return formatter.string(from: duration) ?? "0m"
     }
     
     private func formatDate(_ date: Date) -> String {
