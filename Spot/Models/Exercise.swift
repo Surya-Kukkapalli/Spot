@@ -11,6 +11,17 @@ struct ExerciseTemplate: Identifiable, Codable {
     let secondaryMuscles: [String]
     let instructions: [String]
     
+    init(id: String, name: String, bodyPart: String, equipment: String, gifUrl: String, target: String, secondaryMuscles: [String], instructions: [String]) {
+        self.id = id
+        self.name = name
+        self.bodyPart = bodyPart
+        self.equipment = equipment
+        self.gifUrl = gifUrl
+        self.target = target
+        self.secondaryMuscles = secondaryMuscles
+        self.instructions = instructions
+    }
+    
     enum CodingKeys: String, CodingKey {
         case id, name, bodyPart, equipment, gifUrl, target, secondaryMuscles, instructions
     }
@@ -30,7 +41,7 @@ struct ExerciseTemplate: Identifiable, Codable {
 }
 
 // Main Exercise model
-struct Exercise: Identifiable, Codable {
+struct Exercise: Identifiable, Codable, Equatable {
     let id: String
     let name: String
     var sets: [ExerciseSet]
@@ -86,10 +97,21 @@ struct Exercise: Identifiable, Codable {
         try container.encode(target, forKey: .target)
         try container.encode(secondaryMuscles, forKey: .secondaryMuscles)
     }
+    
+    static func == (lhs: Exercise, rhs: Exercise) -> Bool {
+        return lhs.id == rhs.id &&
+               lhs.name == rhs.name &&
+               lhs.sets == rhs.sets &&
+               lhs.equipment == rhs.equipment &&
+               lhs.gifUrl == rhs.gifUrl &&
+               lhs.target == rhs.target &&
+               lhs.secondaryMuscles == rhs.secondaryMuscles &&
+               lhs.notes == rhs.notes
+    }
 }
 
 // Exercise Set model
-struct ExerciseSet: Identifiable, Codable {
+struct ExerciseSet: Identifiable, Codable, Equatable {
     var id: String
     var weight: Double = 0
     var reps: Int = 0
@@ -103,6 +125,15 @@ struct ExerciseSet: Identifiable, Codable {
         case failure
         case dropset
         case superset
+    }
+    
+    static func == (lhs: ExerciseSet, rhs: ExerciseSet) -> Bool {
+        return lhs.id == rhs.id &&
+               lhs.weight == rhs.weight &&
+               lhs.reps == rhs.reps &&
+               lhs.type == rhs.type &&
+               lhs.isCompleted == rhs.isCompleted &&
+               lhs.restInterval == rhs.restInterval
     }
 }
 

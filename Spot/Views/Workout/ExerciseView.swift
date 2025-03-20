@@ -156,30 +156,43 @@ class ExerciseViewModel: ObservableObject {
 
 struct ExerciseTemplateRowView: View {
     let exercise: ExerciseTemplate
+    let onSelect: () -> Void
     
     var body: some View {
         HStack(spacing: 16) {
-            // Exercise Image
-            AsyncImage(url: URL(string: exercise.gifUrl)) { image in
-                image
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } placeholder: {
-                Color.gray.opacity(0.3)
+            Button(action: onSelect) {
+                HStack(spacing: 16) {
+                    // Exercise Image
+                    AsyncImage(url: URL(string: exercise.gifUrl)) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Color.gray.opacity(0.3)
+                    }
+                    .frame(width: 60, height: 60)
+                    .cornerRadius(8)
+                    
+                    // Exercise Details
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(exercise.name.capitalized)
+                            .font(.headline)
+                        Text(exercise.target.capitalized)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                }
             }
-            .frame(width: 60, height: 60)
-            .cornerRadius(8)
+            .foregroundColor(.primary)
             
-            // Exercise Details
-            VStack(alignment: .leading, spacing: 4) {
-                Text(exercise.name.capitalized)
-                    .font(.headline)
-                Text(exercise.target.capitalized)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+            // Analytics icon
+            NavigationLink(destination: ExerciseDetailsView(exercise: exercise)) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .foregroundColor(.gray)
+                    .padding(.trailing, 4)
             }
-            
-            Spacer()
         }
         .padding()
         .background(Color(.systemBackground))
@@ -205,19 +218,17 @@ struct ExerciseView: View {
                     ForEach(viewModel.organizedExercises, id: \.section) { section in
                         Section(header: Text(section.section)) {
                             ForEach(section.exercises) { template in
-                                ExerciseTemplateRowView(exercise: template)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        ExerciseService.shared.addToRecent(template)
-                                        let exercise = Exercise(from: template)
-                                        workoutViewModel.addExercise(exercise)
-                                        dismiss()
+                                ExerciseTemplateRowView(exercise: template) {
+                                    ExerciseService.shared.addToRecent(template)
+                                    let exercise = Exercise(from: template)
+                                    workoutViewModel.addExercise(exercise)
+                                    dismiss()
+                                }
+                                .onAppear {
+                                    Task {
+                                        await viewModel.loadMoreIfNeeded(currentExercise: template)
                                     }
-                                    .onAppear {
-                                        Task {
-                                            await viewModel.loadMoreIfNeeded(currentExercise: template)
-                                        }
-                                    }
+                                }
                             }
                         }
                     }

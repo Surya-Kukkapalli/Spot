@@ -40,11 +40,10 @@ struct CreateWorkoutTemplateView: View {
                 NavigationStack {
                     ExerciseSearchView(workoutViewModel: workoutViewModel)
                         .onDisappear {
-                            if let exercise = workoutViewModel.exercises.last {
-                                if !selectedExercises.contains(where: { $0.id == exercise.id }) {
-                                    selectedExercises.append(exercise)
-                                }
-                            }
+                            // Update selectedExercises with all exercises from workoutViewModel
+                            selectedExercises = workoutViewModel.exercises
+                            print("DEBUG: Updated selected exercises. Count: \(selectedExercises.count)")
+                            print("DEBUG: Exercise names: \(selectedExercises.map { $0.name })")
                         }
                 }
             }
@@ -54,6 +53,9 @@ struct CreateWorkoutTemplateView: View {
     private func saveTemplate() {
         Task {
             guard let userId = Auth.auth().currentUser?.uid else { return }
+            
+            print("DEBUG: Saving template with \(selectedExercises.count) exercises")
+            print("DEBUG: Exercise names: \(selectedExercises.map { $0.name })")
             
             let workout = Workout(
                 id: UUID().uuidString,
@@ -163,32 +165,51 @@ struct WorkoutTemplateExerciseRow: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            // Exercise Image
-            AsyncImage(url: URL(string: exercise.gifUrl)) { image in
-                image.resizable().aspectRatio(contentMode: .fit)
-            } placeholder: {
-                Color.gray.opacity(0.3)
-            }
-            .frame(width: 50, height: 50)
-            .cornerRadius(8)
-            
-            // Exercise Name
-            Text(exercise.name.capitalized)
-                .font(.headline)
-            
-            Spacer()
-            
-            // More Options Menu
-            Menu {
-                Button(role: .destructive) {
-                    onDelete()
-                } label: {
-                    Label("Delete", systemImage: "trash")
+            // Exercise Image and Name
+            HStack(spacing: 12) {
+                AsyncImage(url: URL(string: exercise.gifUrl)) { image in
+                    image.resizable().aspectRatio(contentMode: .fit)
+                } placeholder: {
+                    Color.gray.opacity(0.3)
                 }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .foregroundColor(.gray)
-                    .padding(8)
+                .frame(width: 50, height: 50)
+                .cornerRadius(8)
+                
+                Text(exercise.name.capitalized)
+                    .font(.headline)
+                
+                Spacer()
+            }
+            
+            // Analytics and More Options
+            HStack(spacing: 8) {
+                NavigationLink {
+                    ExerciseDetailsView(exercise: ExerciseTemplate(
+                        id: exercise.id,
+                        name: exercise.name,
+                        bodyPart: exercise.target,
+                        equipment: exercise.equipment.description,
+                        gifUrl: exercise.gifUrl,
+                        target: exercise.target,
+                        secondaryMuscles: exercise.secondaryMuscles,
+                        instructions: exercise.notes?.components(separatedBy: "\n") ?? []
+                    ))
+                } label: {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .foregroundColor(.gray)
+                }
+                
+                Menu {
+                    Button(role: .destructive) {
+                        onDelete()
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundColor(.gray)
+                        .padding(8)
+                }
             }
         }
         .padding()

@@ -311,7 +311,7 @@ private struct WorkoutExercisesView: View {
                 .font(.title3)
             
             ForEach(workout.exercises, id: \.exerciseName) { exercise in
-                ExerciseRowView(
+                ExerciseWorkoutRowView(
                     exercise: exercise,
                     showingPRAlert: $showingPRAlert,
                     prMessage: $prMessage,
@@ -327,7 +327,7 @@ private struct WorkoutExercisesView: View {
 }
 
 // MARK: - Exercise Row View
-private struct ExerciseRowView: View {
+private struct ExerciseWorkoutRowView: View {
     let exercise: WorkoutSummary.Exercise
     @Binding var showingPRAlert: Bool
     @Binding var prMessage: String
@@ -336,38 +336,61 @@ private struct ExerciseRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
-                AsyncImage(url: URL(string: exercise.imageUrl)) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 60, height: 60)
-                        .cornerRadius(8)
-                } placeholder: {
-                    ProgressView()
-                        .frame(width: 60, height: 60)
-                }
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(exercise.exerciseName)
-                        .font(.headline)
-                    Text(exercise.targetMuscle)
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                }
-                
-                if exercise.hasPR {
-                    Spacer()
-                    HStack {
-                        Image(systemName: "trophy.fill")
-                            .foregroundColor(.yellow)
-                        Text("New PR!")
-                            .font(.caption)
-                            .foregroundColor(.yellow)
+                // Exercise Image and Name
+                HStack(spacing: 12) {
+                    AsyncImage(url: URL(string: exercise.imageUrl)) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 60, height: 60)
+                            .cornerRadius(8)
+                    } placeholder: {
+                        ProgressView()
+                            .frame(width: 60, height: 60)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.yellow.opacity(0.2))
-                    .cornerRadius(8)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(exercise.exerciseName)
+                            .font(.headline)
+                        Text(exercise.targetMuscle)
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                    
+                    Spacer()
+                }
+                
+                // Analytics and PR Badge
+                HStack(spacing: 8) {
+                    NavigationLink {
+                        ExerciseDetailsView(exercise: ExerciseTemplate(
+                            id: UUID().uuidString,
+                            name: exercise.exerciseName,
+                            bodyPart: exercise.targetMuscle,
+                            equipment: "unknown",
+                            gifUrl: exercise.imageUrl,
+                            target: exercise.targetMuscle,
+                            secondaryMuscles: [],
+                            instructions: []
+                        ))
+                    } label: {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .foregroundColor(.gray)
+                    }
+                    
+                    if exercise.hasPR {
+                        HStack {
+                            Image(systemName: "trophy.fill")
+                                .foregroundColor(.yellow)
+                            Text("New PR!")
+                                .font(.caption)
+                                .foregroundColor(.yellow)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.yellow.opacity(0.2))
+                        .cornerRadius(8)
+                    }
                 }
             }
             
@@ -402,9 +425,6 @@ private struct ExerciseRowView: View {
                     if set.isPR {
                         Image(systemName: "trophy.fill")
                             .foregroundColor(.yellow)
-                            // .onAppear {
-                            //     showPRTooltip(exercise: exercise.exerciseName, weight: set.weight, reps: set.reps)
-                            // }
                     }
                 }
                 .font(.subheadline)

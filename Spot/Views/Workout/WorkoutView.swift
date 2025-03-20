@@ -25,7 +25,8 @@ struct WorkoutView: View {
                     SaveWorkoutView(viewModel: viewModel)
                 }
                 .onAppear {
-                    let _ = print("DEBUG: ActiveWorkoutView appeared")
+                    print("DEBUG: ActiveWorkoutView appeared")
+                    print("DEBUG: Current exercise count: \(viewModel.exercises.count)")
                 }
             } else {
                 let _ = print("DEBUG: Showing WorkoutProgramView")
@@ -35,6 +36,12 @@ struct WorkoutView: View {
         }
         .onChange(of: viewModel.isWorkoutInProgress) { newValue in
             print("DEBUG: isWorkoutInProgress changed to: \(newValue)")
+            print("DEBUG: Current exercise count: \(viewModel.exercises.count)")
+        }
+        .onChange(of: viewModel.exercises) { newValue in
+            print("DEBUG: Exercises array changed")
+            print("DEBUG: New exercise count: \(newValue.count)")
+            print("DEBUG: Exercise names: \(newValue.map { $0.name })")
         }
     }
 }
@@ -69,8 +76,8 @@ private struct ActiveWorkoutView: View {
                 
                 if viewModel.exercises.isEmpty {
                     // Empty State
-                    // EmptyWorkoutView(showExerciseSearch: $showExerciseSearch)
-                    //     .padding(.vertical, 40)
+                    EmptyWorkoutView(showExerciseSearch: $showExerciseSearch)
+                        .padding(.vertical, 40)
                 } else {
                     // Exercise List
                     LazyVStack(spacing: 12) {
@@ -89,10 +96,16 @@ private struct ActiveWorkoutView: View {
                 .padding()
             }
         }
+        .onAppear {
+            print("DEBUG: ActiveWorkoutView appeared")
+            print("DEBUG: Current exercise count: \(viewModel.exercises.count)")
+            print("DEBUG: Exercise names: \(viewModel.exercises.map { $0.name })")
+        }
     }
     
     private var addExerciseButton: some View {
         Button {
+            print("DEBUG: Add Exercise button tapped")
             showExerciseSearch = true
         } label: {
             HStack {
@@ -110,18 +123,16 @@ private struct ActiveWorkoutView: View {
     
     private var finishWorkoutButton: some View {
         Button {
+            print("DEBUG: Finish Workout button tapped")
             showSaveWorkout = true
         } label: {
-            Text("Finish")
+            Text("Finish Workout")
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
-                .background(Color(.systemBackground))
-                .foregroundColor(.blue)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.blue, lineWidth: 1)
-                )
+                .background(Color(.systemGray6))
+                .foregroundColor(.primary)
+                .cornerRadius(10)
         }
     }
     
@@ -178,21 +189,21 @@ struct EmptyWorkoutView: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             
-            Button {
-                showExerciseSearch = true
-            } label: {
-                HStack {
-                    Image(systemName: "plus.circle.fill")
-                    Text("Add Exercise")
-                }
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(10)
-                .padding(.horizontal, 40)
-            }
+//            Button {
+//                showExerciseSearch = true
+//            } label: {
+//                HStack {
+//                    Image(systemName: "plus.circle.fill")
+//                    Text("Add Exercise")
+//                }
+//                .font(.headline)
+//                .frame(maxWidth: .infinity)
+//                .frame(height: 50)
+//                .background(Color.blue)
+//                .foregroundColor(.white)
+//                .cornerRadius(10)
+//                .padding(.horizontal, 40)
+//            }
         }
     }
 }

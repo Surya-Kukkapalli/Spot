@@ -161,20 +161,38 @@ struct WorkoutTemplateExerciseDetailRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                // Exercise Image
-                AsyncImage(url: URL(string: exercise.gifUrl)) { image in
-                    image.resizable().aspectRatio(contentMode: .fit)
-                } placeholder: {
-                    Color.gray.opacity(0.3)
+                // Exercise Image and Name
+                HStack(spacing: 12) {
+                    AsyncImage(url: URL(string: exercise.gifUrl)) { image in
+                        image.resizable().aspectRatio(contentMode: .fit)
+                    } placeholder: {
+                        Color.gray.opacity(0.3)
+                    }
+                    .frame(width: 50, height: 50)
+                    .cornerRadius(8)
+                    
+                    Text(exercise.name.capitalized)
+                        .font(.headline)
+                    
+                    Spacer()
                 }
-                .frame(width: 50, height: 50)
-                .cornerRadius(8)
                 
-                // Exercise Name
-                Text(exercise.name.capitalized)
-                    .font(.headline)
-                
-                Spacer()
+                // Analytics
+                NavigationLink {
+                    ExerciseDetailsView(exercise: ExerciseTemplate(
+                        id: exercise.id,
+                        name: exercise.name,
+                        bodyPart: exercise.target,
+                        equipment: exercise.equipment.description,
+                        gifUrl: exercise.gifUrl,
+                        target: exercise.target,
+                        secondaryMuscles: exercise.secondaryMuscles,
+                        instructions: []
+                    ))
+                } label: {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .foregroundColor(.gray)
+                }
             }
             
             if let notes = exercise.notes {

@@ -20,7 +20,7 @@ class WorkoutViewModel: ObservableObject {
     private let db = Firestore.firestore()
     
     init() {
-        // Initialize with default values if needed
+        print("DEBUG: Initializing WorkoutViewModel")
     }
     
     func startNewWorkout(name: String) {
@@ -43,21 +43,28 @@ class WorkoutViewModel: ObservableObject {
         self.workoutStartTime = Date()
         self.isWorkoutInProgress = true
         print("DEBUG: Workout initialized with ID: \(workout.id)")
+        print("DEBUG: isWorkoutInProgress set to: \(isWorkoutInProgress)")
     }
     
     func addExercise(_ exercise: Exercise) {
+        print("DEBUG: Adding exercise to workout: \(exercise.name)")
+        print("DEBUG: Current exercises count: \(exercises.count)")
         exercises.append(exercise)
-        print("DEBUG: Added exercise: \(exercise.name). Total exercises: \(exercises.count)")
+        print("DEBUG: New exercises count: \(exercises.count)")
         
         // Update active workout's exercises
         if var workout = activeWorkout {
+            print("DEBUG: Updating active workout exercises")
             workout.exercises = exercises
             activeWorkout = workout
-            print("DEBUG: Updated active workout exercises")
+            print("DEBUG: Active workout updated with \(workout.exercises.count) exercises")
+        } else {
+            print("DEBUG: Warning: No active workout when adding exercise")
         }
     }
     
     func addExercise(name: String, equipment: Equipment) {
+        print("DEBUG: Creating new exercise with name: \(name)")
         let exercise = Exercise(
             id: UUID().uuidString,
             name: name,
@@ -65,28 +72,43 @@ class WorkoutViewModel: ObservableObject {
             equipment: equipment
         )
         exercises.append(exercise)
+        print("DEBUG: Added exercise with equipment. Total exercises: \(exercises.count)")
     }
     
     func addSet(to exerciseIndex: Int) {
-        guard exerciseIndex < exercises.count else { return }
+        guard exerciseIndex < exercises.count else {
+            print("DEBUG: Failed to add set - invalid exercise index: \(exerciseIndex)")
+            return
+        }
         let newSet = ExerciseSet(id: UUID().uuidString)
         exercises[exerciseIndex].sets.append(newSet)
+        print("DEBUG: Added set to exercise at index \(exerciseIndex). Total sets: \(exercises[exerciseIndex].sets.count)")
     }
     
     func removeSet(from exerciseIndex: Int, at setIndex: Int) {
         guard exerciseIndex < exercises.count,
-              setIndex < exercises[exerciseIndex].sets.count else { return }
+              setIndex < exercises[exerciseIndex].sets.count else {
+            print("DEBUG: Failed to remove set - invalid indices: exercise \(exerciseIndex), set \(setIndex)")
+            return
+        }
         exercises[exerciseIndex].sets.remove(at: setIndex)
+        print("DEBUG: Removed set \(setIndex) from exercise \(exerciseIndex)")
     }
     
     func removeExercise(at index: Int) {
-        guard exercises.indices.contains(index) else { return }
+        guard exercises.indices.contains(index) else {
+            print("DEBUG: Failed to remove exercise - invalid index: \(index)")
+            return
+        }
+        let exercise = exercises[index]
         exercises.remove(at: index)
+        print("DEBUG: Removed exercise: \(exercise.name). Remaining exercises: \(exercises.count)")
     }
     
     func startRestTimer(seconds: TimeInterval) {
         remainingRestTime = seconds
         currentRestTimer?.invalidate()
+        print("DEBUG: Starting rest timer for \(seconds) seconds")
         
         currentRestTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
             Task { @MainActor [weak self] in
@@ -95,6 +117,7 @@ class WorkoutViewModel: ObservableObject {
                     self.remainingRestTime -= 1
                 } else {
                     timer.invalidate()
+                    print("DEBUG: Rest timer completed")
                 }
             }
         }

@@ -7,8 +7,9 @@ class ExerciseSearchViewModel: ObservableObject {
     @Published var error: String?
     @Published var searchText: String = ""
     @Published var selectedFilter: FilterType = .all
+    @Published var selectedExercises: Set<String> = [] // Track selected exercise IDs
+    @Published var allExercises: [ExerciseTemplate] = []
     private var hasMoreExercises = true
-    private var allExercises: [ExerciseTemplate] = []
     
     enum FilterType {
         case all
@@ -79,10 +80,12 @@ class ExerciseSearchViewModel: ObservableObject {
         
         do {
             let newExercises = try await ExerciseService.shared.fetchExercises()
+            print("DEBUG: Loaded \(newExercises.count) exercises")
             exercises = newExercises
             filteredExercises = exercises
             hasMoreExercises = newExercises.count == 50 // pageSize
         } catch {
+            print("DEBUG: Error loading exercises: \(error)")
             self.error = error.localizedDescription
         }
         
@@ -117,138 +120,194 @@ class ExerciseSearchViewModel: ObservableObject {
 }
 
 struct ExerciseSearchView: View {
-    @StateObject private var viewModel = ExerciseSearchViewModel()
     @ObservedObject var workoutViewModel: WorkoutViewModel
+    @StateObject private var viewModel = ExerciseSearchViewModel()
     @Environment(\.dismiss) private var dismiss
-    @State private var showEquipmentFilter = false
-    @State private var showMuscleFilter = false
     
     var body: some View {
         VStack(spacing: 0) {
             // Search bar
-            searchBar
+            SearchBar(text: $viewModel.searchText)
+                .padding()
             
             // Filter buttons
-            filterButtons
+            HStack(spacing: 16) {
+                Button("All Equipment") {
+                    viewModel.selectedFilter = .equipment
+                }
+                .buttonStyle(FilterButtonStyle(isSelected: viewModel.selectedFilter == .equipment))
+                
+                Button("All Muscles") {
+                    viewModel.selectedFilter = .muscles
+                }
+                .buttonStyle(FilterButtonStyle(isSelected: viewModel.selectedFilter == .muscles))
+            }
+            .padding(.horizontal)
+            .padding(.bottom)
             
-            if viewModel.isLoading && viewModel.exercises.isEmpty {
-                ProgressView("Loading exercises...")
-                    .frame(maxHeight: .infinity)
-            } else if let error = viewModel.error {
-                Text("Error: \(error)")
-                    .frame(maxHeight: .infinity)
-            } else {
-                List {
-                    ForEach(viewModel.organizedExercises, id: \.section) { section in
-                        Section(header: Text(section.section)) {
-                            ForEach(section.exercises) { exercise in
-                                ExerciseRow(exercise: exercise) {
-                                    ExerciseService.shared.addToRecent(exercise)
-                                    let newExercise = Exercise(from: exercise)
-                                    workoutViewModel.addExercise(newExercise)
-                                    dismiss()
-                                }
-                                .onAppear {
-                                    Task {
-                                        await viewModel.loadMoreIfNeeded(currentExercise: exercise)
+            // Exercise list
+            List {
+                ForEach(viewModel.organizedExercises, id: \.section) { section in
+                    Section(header: Text(section.section)) {
+                        ForEach(section.exercises) { exercise in
+                            ExerciseRowView(
+                                exercise: exercise,
+                                isSelected: viewModel.selectedExercises.contains(exercise.id),
+                                onSelect: {
+                                    print("DEBUG: Exercise tapped: \(exercise.name)")
+                                    if viewModel.selectedExercises.contains(exercise.id) {
+                                        print("DEBUG: Removing exercise from selection: \(exercise.name)")
+                                        viewModel.selectedExercises.remove(exercise.id)
+                                    } else {
+                                        print("DEBUG: Adding exercise to selection: \(exercise.name)")
+                                        viewModel.selectedExercises.insert(exercise.id)
                                     }
+                                    print("DEBUG: Selected exercises count: \(viewModel.selectedExercises.count)")
                                 }
-                            }
+                            )
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
                         }
                     }
                 }
-                .listStyle(.plain)
+            }
+            .listStyle(PlainListStyle())
+            
+            // Add exercises button
+            if !viewModel.selectedExercises.isEmpty {
+                Button(action: addSelectedExercises) {
+                    Text("Add \(viewModel.selectedExercises.count) exercise\(viewModel.selectedExercises.count == 1 ? "" : "s")")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(10)
+                }
+                .padding()
             }
         }
         .navigationTitle("Add Exercise")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button("Cancel") {
-                    dismiss()
-                }
-            }
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Create") {
-                    // To be implemented: Create custom exercise
-                }
-                .foregroundColor(.blue)
-            }
-        }
         .task {
-            viewModel.reset()
+            print("DEBUG: Loading exercises in ExerciseSearchView")
             await viewModel.loadExercises()
         }
     }
     
-    private var searchBar: some View {
+    private func addSelectedExercises() {
+        print("DEBUG: Adding selected exercises. Count: \(viewModel.selectedExercises.count)")
+        
+        // Start a new workout if one isn't in progress
+        if !workoutViewModel.isWorkoutInProgress {
+            print("DEBUG: Starting new workout")
+            workoutViewModel.startNewWorkout(name: "New Workout")
+        }
+        
+        // Get all selected exercises from all possible sources
+        let allExercises = viewModel.organizedExercises.flatMap { $0.exercises }
+        let selectedTemplates = allExercises.filter { viewModel.selectedExercises.contains($0.id) }
+        
+        print("DEBUG: Selected templates: \(selectedTemplates.map { $0.name })")
+        
+        // Convert templates to exercises and add them
+        for template in selectedTemplates {
+            print("DEBUG: Converting template to exercise: \(template.name)")
+            let exercise = Exercise(from: template)
+            print("DEBUG: Created exercise with ID: \(exercise.id)")
+            workoutViewModel.addExercise(exercise)
+            ExerciseService.shared.addToRecent(template)
+        }
+        
+        print("DEBUG: Total exercises in workout: \(workoutViewModel.exercises.count)")
+        dismiss()
+    }
+}
+
+struct ExerciseRowView: View {
+    let exercise: ExerciseTemplate
+    let isSelected: Bool
+    let onSelect: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 0) {
+            // Selection indicator
+            Rectangle()
+                .fill(isSelected ? Color.blue : Color.clear)
+                .frame(width: 4)
+            
+            // Main content
+            Button(action: onSelect) {
+                HStack(spacing: 16) {
+                    AsyncImage(url: URL(string: exercise.gifUrl)) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                    } placeholder: {
+                        Color.gray.opacity(0.3)
+                    }
+                    .frame(width: 50, height: 50)
+                    .cornerRadius(8)
+                    
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(exercise.name.capitalized)
+                            .font(.headline)
+                        Text(exercise.target.capitalized)
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
+                    
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PlainButtonStyle())
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            
+            // Analytics icon
+            NavigationLink(destination: ExerciseDetailsView(exercise: exercise)) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .foregroundColor(.gray)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PlainButtonStyle())
+            .padding(.trailing, 8)
+        }
+        .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+    }
+}
+
+struct FilterButtonStyle: ButtonStyle {
+    let isSelected: Bool
+    
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Color.blue.opacity(0.1) : Color(.systemGray6))
+            )
+            .foregroundColor(isSelected ? .blue : .primary)
+    }
+}
+
+struct SearchBar: View {
+    @Binding var text: String
+    
+    var body: some View {
         HStack {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.gray)
-            TextField("Search exercise", text: $viewModel.searchText)
+            
+            TextField("Search exercise", text: $text)
+                .textFieldStyle(PlainTextFieldStyle())
         }
         .padding(8)
         .background(Color(.systemGray6))
         .cornerRadius(8)
-        .padding()
-    }
-    
-    private var filterButtons: some View {
-        HStack(spacing: 16) {
-            Button(action: { showEquipmentFilter = true }) {
-                Text("All Equipment")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
-            }
-            
-            Button(action: { showMuscleFilter = true }) {
-                Text("All Muscles")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
-            }
-        }
-        .padding(.horizontal)
-        .padding(.bottom)
-    }
-}
-
-struct ExerciseRow: View {
-    let exercise: ExerciseTemplate
-    let onSelect: () -> Void
-    
-    var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 12) {
-                // Exercise Image
-                AsyncImage(url: URL(string: exercise.gifUrl)) { image in
-                    image.resizable().aspectRatio(contentMode: .fit)
-                } placeholder: {
-                    Color.gray.opacity(0.3)
-                }
-                .frame(width: 50, height: 50)
-                .cornerRadius(8)
-                
-                // Exercise Details
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(exercise.name.capitalized)
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                    Text(exercise.target.capitalized)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                
-                Spacer()
-                
-                // Analytics icon
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .foregroundColor(.gray)
-            }
-        }
     }
 }
 

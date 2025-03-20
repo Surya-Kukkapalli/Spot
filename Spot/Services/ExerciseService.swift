@@ -14,6 +14,7 @@ class ExerciseService {
         case invalidURL
         case networkError(Error)
         case decodingError(Error)
+        case noData
     }
     
     private init() {}
@@ -99,6 +100,28 @@ class ExerciseService {
             let (data, _) = try await URLSession.shared.data(for: request)
             return try JSONDecoder().decode([ExerciseTemplate].self, from: data)
         } catch {
+            throw APIError.networkError(error)
+        }
+    }
+    
+    // Add function to fetch exercise details by name
+    func fetchExerciseDetails(name: String) async throws -> ExerciseTemplate? {
+        // URL encode the exercise name
+        guard let encodedName = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "\(baseURL)/exercises/name/\(encodedName)") else {
+            throw APIError.invalidURL
+        }
+        
+        var request = URLRequest(url: url)
+        request.addValue(apiKey, forHTTPHeaderField: "X-RapidAPI-Key")
+        request.addValue("exercisedb.p.rapidapi.com", forHTTPHeaderField: "X-RapidAPI-Host")
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let exercises = try JSONDecoder().decode([ExerciseTemplate].self, from: data)
+            return exercises.first { $0.name.lowercased() == name.lowercased() }
+        } catch {
+            print("DEBUG: Error fetching exercise details: \(error)")
             throw APIError.networkError(error)
         }
     }
