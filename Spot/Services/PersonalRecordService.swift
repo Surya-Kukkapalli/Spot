@@ -5,48 +5,49 @@ class PersonalRecordService {
     private let db = Firestore.firestore()
     
     func checkAndUpdatePR(userId: String, exercise: WorkoutSummary.Exercise, workoutId: String) async throws -> Bool {
+        let exerciseName = exercise.exerciseName.replacingOccurrences(of: "/", with: "_")
         let exerciseRef = db.collection("users").document(userId)
-            .collection("personal_records").document(exercise.exerciseName)
-        
-        let currentOneRepMax = exercise.bestOneRepMax
-        let bestSet = exercise.bestSet
+            .collection("personal_records").document(exerciseName)
         
         let result = try await exerciseRef.getDocument()
+        let currentOneRepMax = exercise.bestSet?.weight ?? 0
+        let bestSet = exercise.bestSet
         
         if !result.exists {
-            // First time performing this exercise, automatically a PR
-            guard let bestSet = bestSet else { return false }
-            
-            let pr = PersonalRecord(
-                id: UUID().uuidString,
-                exerciseName: exercise.exerciseName,
-                weight: bestSet.weight,
-                reps: bestSet.reps,
-                oneRepMax: currentOneRepMax,
-                date: Date(),
-                workoutId: workoutId,
-                userId: userId
-            )
-            try exerciseRef.setData(from: pr)
-            return true
+            // No PR exists yet, create one
+            if let set = bestSet {
+                try await exerciseRef.setData([
+                    "exerciseName": exercise.exerciseName,
+                    "weight": set.weight,
+                    "reps": set.reps,
+                    "oneRepMax": currentOneRepMax,
+                    "date": Timestamp(date: Date()),
+                    "workoutId": workoutId,
+                    "userId": userId
+                ])
+                return true
+            }
+            return false
         }
         
-        // Check if current 1RM exceeds previous PR
-        if let previousPR = try? result.data(as: PersonalRecord.self) {
-            if currentOneRepMax > previousPR.oneRepMax {
-                guard let bestSet = bestSet else { return false }
-                
-                let newPR = PersonalRecord(
-                    id: UUID().uuidString,
-                    exerciseName: exercise.exerciseName,
-                    weight: bestSet.weight,
-                    reps: bestSet.reps,
-                    oneRepMax: currentOneRepMax,
-                    date: Date(),
-                    workoutId: workoutId,
-                    userId: userId
-                )
-                try exerciseRef.setData(from: newPR)
+        // Check if current set beats the PR
+        guard let data = result.data(),
+              let prWeight = data["weight"] as? Double,
+              let prReps = data["reps"] as? Int,
+              let prOneRepMax = data["oneRepMax"] as? Double else {
+            return false
+        }
+        
+        if currentOneRepMax > prOneRepMax {
+            // Update PR
+            if let set = bestSet {
+                try await exerciseRef.updateData([
+                    "weight": set.weight,
+                    "reps": set.reps,
+                    "oneRepMax": currentOneRepMax,
+                    "date": Timestamp(date: Date()),
+                    "workoutId": workoutId
+                ])
                 return true
             }
         }
@@ -68,5 +69,14 @@ class PersonalRecordService {
             .getDocuments()
         
         return snapshot.documents.compactMap { try? $0.data(as: PersonalRecord.self) }
+    }
+    
+    func fetchPersonalRecords(userId: String) async throws -> [PersonalRecord] {
+        let snapshot = try await db.collection("users").document(userId)
+            .collection("personal_records").getDocuments()
+        
+        return try snapshot.documents.compactMap { document in
+            try document.data(as: PersonalRecord.self)
+        }
     }
 } 

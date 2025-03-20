@@ -238,7 +238,7 @@ struct ExerciseRowView: View {
             
             // Main content
             Button(action: onSelect) {
-                HStack(spacing: 16) {
+                HStack(spacing: 1) {
                     AsyncImage(url: URL(string: exercise.gifUrl)) { image in
                         image
                             .resizable()
@@ -246,7 +246,7 @@ struct ExerciseRowView: View {
                     } placeholder: {
                         Color.gray.opacity(0.3)
                     }
-                    .frame(width: 50, height: 50)
+                    .frame(width: 55, height: 50)
                     .cornerRadius(8)
                     
                     VStack(alignment: .leading, spacing: 4) {
@@ -263,13 +263,14 @@ struct ExerciseRowView: View {
             }
             .buttonStyle(PlainButtonStyle())
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.vertical, 8)
             
             // Analytics icon
             NavigationLink(destination: ExerciseDetailsView(exercise: exercise)) {
                 Image(systemName: "chart.line.uptrend.xyaxis")
                     .foregroundColor(.gray)
-                    .frame(width: 44, height: 44)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                     .contentShape(Rectangle())
             }
             .buttonStyle(PlainButtonStyle())
