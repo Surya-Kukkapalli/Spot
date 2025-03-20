@@ -2,16 +2,20 @@ import Foundation
 import FirebaseFirestore
 
 struct WorkoutProgram: Identifiable, Codable {
-    let id: String
-    let userId: String
-    let name: String
-    let description: String?
+    var id: String
+    var userId: String
+    var name: String
+    var description: String?
     var workoutTemplates: [WorkoutTemplate]
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date
+    var updatedAt: Date
     var likes: Int
     var usageCount: Int
     var isPublic: Bool
+    
+    var workoutCount: Int {
+        workoutTemplates.count
+    }
     
     init(id: String = UUID().uuidString,
          userId: String,
@@ -33,9 +37,5 @@ struct WorkoutProgram: Identifiable, Codable {
         self.likes = likes
         self.usageCount = usageCount
         self.isPublic = isPublic
-    }
-    
-    var workoutCount: Int {
-        return workoutTemplates.count
     }
 } 

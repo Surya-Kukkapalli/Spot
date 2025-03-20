@@ -2,21 +2,32 @@ import SwiftUI
 import PhotosUI
 
 struct ProfileView: View {
+    let userId: String?
     @EnvironmentObject var authViewModel: AuthViewModel
     @StateObject private var viewModel = ProfileViewModel()
+    @StateObject private var userViewModel = UserViewModel()
     @State private var showSignOutAlert = false
     @State private var showEditProfile = false
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var selectedMetric: ProfileViewModel.WorkoutMetric = .duration
+    
+    init(userId: String? = nil) {
+        self.userId = userId
+    }
+    
+    var isCurrentUser: Bool {
+        userId == nil || userId == authViewModel.currentUser?.id
+    }
     
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     ProfileHeaderSection(
-                        user: authViewModel.currentUser,
+                        user: isCurrentUser ? authViewModel.currentUser : userViewModel.user,
                         selectedPhotoItem: $selectedPhotoItem,
-                        onPhotoChange: handlePhotoChange
+                        onPhotoChange: handlePhotoChange,
+                        isCurrentUser: isCurrentUser
                     )
                     
                     StatsGridSection(viewModel: viewModel)
@@ -26,26 +37,28 @@ struct ProfileView: View {
                         selectedMetric: $selectedMetric
                     )
                     
-                    NavigationGridSection(userId: authViewModel.currentUser?.id ?? "")
+                    NavigationGridSection(userId: userId ?? authViewModel.currentUser?.id ?? "")
 
                     WorkoutHistorySection(viewModel: viewModel)
                 }
             }
-            .navigationTitle(authViewModel.currentUser?.username ?? "")
+            .navigationTitle(isCurrentUser ? (authViewModel.currentUser?.username ?? "") : (userViewModel.user?.username ?? ""))
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        NavigationLink {
-                            SettingsView()
+                if isCurrentUser {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Menu {
+                            NavigationLink {
+                                SettingsView()
+                            } label: {
+                                Label("Settings", systemImage: "gear")
+                            }
+                            
+                            Button("Sign Out", role: .destructive) {
+                                showSignOutAlert = true
+                            }
                         } label: {
-                            Label("Settings", systemImage: "gear")
+                            Image(systemName: "ellipsis")
                         }
-                        
-                        Button("Sign Out", role: .destructive) {
-                            showSignOutAlert = true
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
                     }
                 }
             }
@@ -59,13 +72,21 @@ struct ProfileView: View {
                 }
             }
             .task {
-                if let userId = authViewModel.currentUser?.id {
-                    await viewModel.fetchUserWorkouts(for: userId)
+                let targetUserId = userId ?? authViewModel.currentUser?.id
+                if let targetUserId = targetUserId {
+                    await viewModel.fetchUserWorkouts(for: targetUserId)
+                    if !isCurrentUser {
+                        await userViewModel.fetchUser(userId: targetUserId)
+                    }
                 }
             }
             .refreshable {
-                if let userId = authViewModel.currentUser?.id {
-                    await viewModel.fetchUserWorkouts(for: userId)
+                let targetUserId = userId ?? authViewModel.currentUser?.id
+                if let targetUserId = targetUserId {
+                    await viewModel.fetchUserWorkouts(for: targetUserId)
+                    if !isCurrentUser {
+                        await userViewModel.fetchUser(userId: targetUserId)
+                    }
                 }
             }
         }
@@ -92,26 +113,21 @@ struct ProfileHeaderSection: View {
     let user: User?
     @Binding var selectedPhotoItem: PhotosPickerItem?
     let onPhotoChange: () async -> Void
+    let isCurrentUser: Bool
     
     var body: some View {
         VStack(spacing: 16) {
-            PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                AsyncImage(url: URL(string: user?.profileImageUrl ?? "")) { image in
-                    image
-                        .resizable()
-                        .scaledToFill()
-                } placeholder: {
-                    Image(systemName: "person.circle.fill")
-                        .resizable()
-                        .foregroundColor(.gray)
+            if isCurrentUser {
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                    profileImage
                 }
-                .frame(width: 120, height: 120)
-                .clipShape(Circle())
-            }
-            .onChange(of: selectedPhotoItem) { _ in
-                Task {
-                    await onPhotoChange()
+                .onChange(of: selectedPhotoItem) { _ in
+                    Task {
+                        await onPhotoChange()
+                    }
                 }
+            } else {
+                profileImage
             }
             
             Text(user?.username ?? "")
@@ -127,6 +143,20 @@ struct ProfileHeaderSection: View {
             }
         }
         .padding()
+    }
+    
+    private var profileImage: some View {
+        AsyncImage(url: URL(string: user?.profileImageUrl ?? "")) { image in
+            image
+                .resizable()
+                .scaledToFill()
+        } placeholder: {
+            Image(systemName: "person.circle.fill")
+                .resizable()
+                .foregroundColor(.gray)
+        }
+        .frame(width: 120, height: 120)
+        .clipShape(Circle())
     }
 }
 
@@ -225,6 +255,34 @@ struct NavigationGridSection: View {
                     Image(systemName: "dumbbell.fill")
                         .font(.title)
                     Text("Exercises")
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.secondary.opacity(0.1))
+                .cornerRadius(10)
+            }
+            
+            NavigationLink {
+                PublicWorkoutsView(userId: userId)
+            } label: {
+                VStack {
+                    Image(systemName: "figure.run")
+                        .font(.title)
+                    Text("Workouts")
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.secondary.opacity(0.1))
+                .cornerRadius(10)
+            }
+            
+            NavigationLink {
+                PublicProgramsView(userId: userId)
+            } label: {
+                VStack {
+                    Image(systemName: "list.bullet.clipboard")
+                        .font(.title)
+                    Text("Programs")
                 }
                 .frame(maxWidth: .infinity)
                 .padding()

@@ -2,13 +2,13 @@ import Foundation
 import FirebaseFirestore
 
 struct WorkoutTemplate: Identifiable, Codable, Hashable {
-    let id: String
-    let userId: String
+    var id: String
+    var userId: String
     let name: String
     let description: String?
     let exercises: [Exercise]
-    let createdAt: Date
-    let updatedAt: Date
+    var createdAt: Date
+    var updatedAt: Date
     var likes: Int
     var usageCount: Int
     var isPublic: Bool

@@ -117,7 +117,7 @@ struct WorkoutProgramView: View {
             .navigationTitle("Workout")
             .navigationDestination(for: WorkoutTemplate.self) { template in
                 if let viewModel = workoutViewModel {
-                    WorkoutTemplateDetailView(template: template)
+                    WorkoutTemplateDetailView(template: template, mode: .start)
                         .environment(\.workoutViewModel, viewModel)
                 }
             }

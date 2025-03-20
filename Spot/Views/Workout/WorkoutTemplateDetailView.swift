@@ -1,10 +1,21 @@
 import SwiftUI
+import FirebaseFirestore
+
+enum WorkoutTemplateDisplayMode {
+    case start
+    case copy
+}
 
 struct WorkoutTemplateDetailView: View {
     let template: WorkoutTemplate
+    let mode: WorkoutTemplateDisplayMode
     @Environment(\.workoutViewModel) private var workoutViewModel
     @Environment(\.dismiss) private var dismiss
-    @State private var showingStartWorkoutAlert = false
+    @StateObject private var programViewModel = WorkoutProgramViewModel()
+    @StateObject private var userViewModel = UserViewModel()
+    @State private var showingActionAlert = false
+    @State private var showCopiedAlert = false
+    @EnvironmentObject var authViewModel: AuthViewModel
     
     var body: some View {
         ScrollView {
@@ -14,9 +25,26 @@ struct WorkoutTemplateDetailView: View {
                     Text(template.name)
                         .font(.title)
                         .bold()
-                    Text("Created by \(template.userId)")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    
+                    HStack {
+                        if let user = userViewModel.user {
+                            AsyncImage(url: URL(string: user.profileImageUrl ?? "")) { image in
+                                image.resizable().scaledToFill()
+                            } placeholder: {
+                                Circle().foregroundColor(.gray.opacity(0.3))
+                            }
+                            .frame(width: 24, height: 24)
+                            .clipShape(Circle())
+                            
+                            Text("Created by \(user.username)")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("Created by Unknown")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
                 .padding(.horizontal)
                 
@@ -28,11 +56,11 @@ struct WorkoutTemplateDetailView: View {
                         .padding(.horizontal)
                 }
                 
-                // Start Workout Button
+                // Action Button
                 Button {
-                    showingStartWorkoutAlert = true
+                    showingActionAlert = true
                 } label: {
-                    Text("Start Workout")
+                    Text(mode == .start ? "Start Workout" : "Save Workout")
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding()
@@ -73,10 +101,6 @@ struct WorkoutTemplateDetailView: View {
                             .font(.title3)
                             .bold()
                         Spacer()
-                        Button("Edit Workout Template") {
-                            // Handle edit workout template
-                        }
-                        .foregroundColor(.blue)
                     }
                     .padding(.horizontal)
                     
@@ -88,13 +112,25 @@ struct WorkoutTemplateDetailView: View {
             .padding(.vertical)
         }
         .navigationBarTitleDisplayMode(.inline)
-        .alert("Start Workout", isPresented: $showingStartWorkoutAlert) {
+        .task {
+            await userViewModel.fetchUser(userId: template.userId)
+        }
+        .alert(mode == .start ? "Start Workout" : "Save Workout", isPresented: $showingActionAlert) {
             Button("Cancel", role: .cancel) { }
-            Button("Start") {
-                startWorkout()
+            Button(mode == .start ? "Start" : "Save") {
+                if mode == .start {
+                    startWorkout()
+                } else {
+                    copyTemplate()
+                }
             }
         } message: {
-            Text("Are you ready to start this workout?")
+            Text(mode == .start ? "Are you ready to start this workout?" : "Do you want to save this workout template?")
+        }
+        .alert("Workout Template Saved!", isPresented: $showCopiedAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("You can find it in the templates section when logging your next workout.")
         }
     }
     
@@ -151,6 +187,25 @@ struct WorkoutTemplateDetailView: View {
         DispatchQueue.main.async {
             dismiss()
             print("DEBUG: Dismissed template view")
+        }
+    }
+    
+    private func copyTemplate() {
+        Task {
+            if let userId = authViewModel.currentUser?.id {
+                try? await programViewModel.createTemplate(
+                    from: Workout(
+                        id: UUID().uuidString,
+                        userId: userId,
+                        name: template.name,
+                        exercises: template.exercises,
+                        notes: template.description
+                    ),
+                    description: template.description,
+                    isPublic: false
+                )
+                showCopiedAlert = true
+            }
         }
     }
 }
@@ -231,6 +286,21 @@ struct WorkoutTemplateExerciseDetailRow: View {
     }
 }
 
+@MainActor
+class UserViewModel: ObservableObject {
+    @Published var user: User?
+    private let db = Firestore.firestore()
+    
+    func fetchUser(userId: String) async {
+        do {
+            let snapshot = try await db.collection("users").document(userId).getDocument()
+            user = try snapshot.data(as: User.self)
+        } catch {
+            print("Error fetching user: \(error)")
+        }
+    }
+}
+
 #Preview {
     NavigationStack {
         WorkoutTemplateDetailView(template: WorkoutTemplate(
@@ -238,6 +308,6 @@ struct WorkoutTemplateExerciseDetailRow: View {
             name: "Sample Workout",
             description: "A sample workout template",
             exercises: []
-        ))
+        ), mode: .start)
     }
 } 

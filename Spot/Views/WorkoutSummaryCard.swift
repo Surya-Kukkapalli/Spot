@@ -8,6 +8,9 @@ struct WorkoutSummaryCard: View {
     @State private var commentCount: Int
     @EnvironmentObject var authViewModel: AuthViewModel
     @State private var showComments = false
+    @State private var showShareSheet = false
+    @State private var showCopiedAlert = false
+    @StateObject private var programViewModel = WorkoutProgramViewModel()
     
     init(workout: WorkoutSummary) {
         self.workout = workout
@@ -19,22 +22,70 @@ struct WorkoutSummaryCard: View {
         VStack(alignment: .leading, spacing: 12) {
             // User header
             HStack {
-                AsyncImage(url: URL(string: workout.userProfileImageUrl ?? "")) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    Circle().foregroundColor(.gray.opacity(0.3))
+                NavigationLink(destination: ProfileView(userId: workout.userId)) {
+                    AsyncImage(url: URL(string: workout.userProfileImageUrl ?? "")) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Circle().foregroundColor(.gray.opacity(0.3))
+                    }
+                    .frame(width: 40, height: 40)
+                    .clipShape(Circle())
                 }
-                .frame(width: 40, height: 40)
-                .clipShape(Circle())
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(workout.username)
-                        .font(.headline)
+                    NavigationLink(destination: ProfileView(userId: workout.userId)) {
+                        Text(workout.username)
+                            .font(.headline)
+                    }
                     Text(workout.date.formatted(date: .abbreviated, time: .shortened))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 Spacer()
+                
+                Menu {
+                    Button(action: {
+                        Task {
+                            if let userId = authViewModel.currentUser?.id {
+                                try? await programViewModel.createTemplate(
+                                    from: Workout(
+                                        id: UUID().uuidString,
+                                        userId: userId,
+                                        name: workout.workoutTitle,
+                                        exercises: workout.exercises.map { exercise in
+                                            Exercise(
+                                                id: UUID().uuidString,
+                                                name: exercise.exerciseName,
+                                                sets: [],
+                                                equipment: Equipment(),
+                                                gifUrl: exercise.imageUrl,
+                                                target: exercise.targetMuscle,
+                                                secondaryMuscles: [],
+                                                notes: nil
+                                            )
+                                        },
+                                        notes: workout.workoutNotes
+                                    ),
+                                    description: workout.workoutNotes,
+                                    isPublic: false
+                                )
+                                showCopiedAlert = true
+                            }
+                        }
+                    }) {
+                        Label("Copy Workout", systemImage: "doc.on.doc")
+                    }
+                    
+                    Button(action: {
+                        showShareSheet = true
+                    }) {
+                        Label("Share Workout", systemImage: "square.and.arrow.up")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundColor(.gray)
+                        .padding(8)
+                }
             }
             
             // Workout title
@@ -179,10 +230,8 @@ struct WorkoutSummaryCard: View {
                     }
                 }
                 .sheet(isPresented: $showComments) {
-                    NavigationStack {
-                        CommentView(workout: workout, onCommentAdded: { newCount in
-                            commentCount = newCount
-                        })
+                    CommentView(workout: workout) { newCount in
+                        commentCount = newCount
                     }
                 }
                 
@@ -192,9 +241,50 @@ struct WorkoutSummaryCard: View {
                 Spacer()
                 
                 Button {
-                    // Share action
+                    showShareSheet = true
                 } label: {
-                    Image(systemName: "square.and.arrow.up")
+                    HStack {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+                .contextMenu {
+                    Button(action: {
+                        Task {
+                            if let userId = authViewModel.currentUser?.id {
+                                try? await programViewModel.createTemplate(
+                                    from: Workout(
+                                        id: UUID().uuidString,
+                                        userId: userId,
+                                        name: workout.workoutTitle,
+                                        exercises: workout.exercises.map { exercise in
+                                            Exercise(
+                                                id: UUID().uuidString,
+                                                name: exercise.exerciseName,
+                                                sets: [],
+                                                equipment: Equipment(),
+                                                gifUrl: exercise.imageUrl,
+                                                target: exercise.targetMuscle,
+                                                secondaryMuscles: [],
+                                                notes: nil
+                                            )
+                                        },
+                                        notes: workout.workoutNotes
+                                    ),
+                                    description: workout.workoutNotes,
+                                    isPublic: false
+                                )
+                                showCopiedAlert = true
+                            }
+                        }
+                    }) {
+                        Label("Copy Workout", systemImage: "doc.on.doc")
+                    }
+                    
+                    Button(action: {
+                        showShareSheet = true
+                    }) {
+                        Label("Share Workout", systemImage: "square.and.arrow.up")
+                    }
                 }
                 Spacer()
             }
@@ -210,5 +300,25 @@ struct WorkoutSummaryCard: View {
                 )
             }
         }
+        .sheet(isPresented: $showShareSheet) {
+            if let url = URL(string: "https://spotapp.com/workout/\(workout.id)") {
+                ShareSheet(activityItems: [url])
+            }
+        }
+        .alert("Workout Template Copied!", isPresented: $showCopiedAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("You can find it in the templates section when logging your next workout.")
+        }
     }
+}
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+    
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 } 

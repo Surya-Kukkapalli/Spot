@@ -163,6 +163,10 @@ enum Equipment: Codable, Equatable, Hashable, CaseIterable {
         case type
         case customValue
     }
+
+    init() {
+        self = .bodyweight
+    }
     
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
