@@ -12,38 +12,51 @@ struct TrophyCaseView: View {
     
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // Filter buttons
-                Picker("Trophy Filter", selection: $selectedFilter) {
-                    Text("All").tag(TrophyFilter.all)
-                    Text("Personal Records").tag(TrophyFilter.personalRecords)
-                    Text("Challenges").tag(TrophyFilter.challenges)
+            if viewModel.personalRecords.isEmpty {
+                VStack(spacing: 20) {
+                    Image(systemName: "trophy")
+                        .font(.system(size: 60))
+                        .foregroundColor(.secondary)
+                    Text("No personal records yet")
+                        .font(.title3)
+                        .foregroundColor(.secondary)
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                
-                // Trophy grid
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 16),
-                    GridItem(.flexible(), spacing: 16)
-                ], spacing: 16) {
-                    ForEach(viewModel.personalRecords.filter { record in
-                        selectedFilter == .all || selectedFilter == .personalRecords
-                    }) { pr in
-                        PersonalRecordCard(record: pr)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.top, 100)
+            } else {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Filter buttons
+                    Picker("Trophy Filter", selection: $selectedFilter) {
+                        Text("All").tag(TrophyFilter.all)
+                        Text("Personal Records").tag(TrophyFilter.personalRecords)
+                        Text("Challenges").tag(TrophyFilter.challenges)
                     }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
                     
-                    // Placeholder for future challenge trophies
-                    if selectedFilter == .all || selectedFilter == .challenges {
-                        // Add challenge trophies here when implemented
+                    // Trophy grid
+                    LazyVGrid(columns: [
+                        GridItem(.flexible(), spacing: 16),
+                        GridItem(.flexible(), spacing: 16)
+                    ], spacing: 16) {
+                        ForEach(viewModel.personalRecords.filter { record in
+                            selectedFilter == .all || selectedFilter == .personalRecords
+                        }) { pr in
+                            PersonalRecordCard(record: pr)
+                        }
+                        
+                        // Placeholder for future challenge trophies
+                        if selectedFilter == .all || selectedFilter == .challenges {
+                            // Add challenge trophies here when implemented
+                        }
                     }
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
             }
-            .padding(.vertical)
         }
         .navigationTitle("Trophy Case")
         .task {
+            guard !userId.isEmpty else { return }
             await viewModel.loadPersonalRecords(for: userId)
         }
     }

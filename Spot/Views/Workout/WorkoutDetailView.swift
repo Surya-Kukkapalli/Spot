@@ -115,7 +115,7 @@ private struct WorkoutHeaderView: View {
                 VStack(alignment: .leading) {
                     Text(workout.username)
                         .font(.headline)
-                    Text(workout.date.formatted())
+                    Text(workout.createdAt.formatted())
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }

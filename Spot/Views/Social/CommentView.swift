@@ -28,7 +28,7 @@ struct CommentView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(workout.username)
                             .font(.headline)
-                        Text(workout.date.formatted(date: .abbreviated, time: .shortened))
+                        Text(workout.createdAt.formatted(date: .abbreviated, time: .shortened))
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }

@@ -13,14 +13,15 @@ class WorkoutProgramViewModel: ObservableObject {
     
     // MARK: - Program Functions
     
-    func createProgram(name: String, description: String?, templates: [WorkoutTemplate]) async throws {
+    func createProgram(name: String, description: String?, templates: [WorkoutTemplate], isPublic: Bool = false) async throws {
         guard let userId = Auth.auth().currentUser?.uid else { return }
         
         let program = WorkoutProgram(
             userId: userId,
             name: name,
             description: description,
-            workoutTemplates: templates
+            workoutTemplates: templates,
+            isPublic: isPublic
         )
         
         let encodedProgram = try Firestore.Encoder().encode(program)

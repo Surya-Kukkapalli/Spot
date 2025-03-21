@@ -127,28 +127,23 @@ class WorkoutViewModel: ObservableObject {
         guard var workout = activeWorkout else { return }
         
         // First, update the workout object with current state
-        await MainActor.run {
-            var exercisesCopy: [Exercise] = []
-            for exercise in exercises {
-                print("Processing exercise: \(exercise.name)")
-                print("Number of sets: \(exercise.sets.count)")
-                exercise.sets.forEach { set in
-                    print("Set: \(set.weight)lbs × \(set.reps) reps")
-                }
-                
-                var exerciseCopy = exercise
-                exerciseCopy.sets = exercise.sets
-                exercisesCopy.append(exerciseCopy)
+        workout.exercises = exercises
+        workout.duration = workoutDuration
+        workout.createdAt = workoutStartTime ?? Date()
+        
+        print("DEBUG: Finishing workout with \(exercises.count) exercises")
+        print("DEBUG: Exercise details:")
+        for exercise in exercises {
+            print("- \(exercise.name): \(exercise.sets.count) sets")
+            for set in exercise.sets {
+                print("  * \(set.weight)lbs × \(set.reps) reps")
             }
-            
-            workout.exercises = exercisesCopy
-            workout.duration = workoutDuration
-            workout.createdAt = workoutStartTime ?? Date()
         }
         
         // Save the workout
         let encodedWorkout = try Firestore.Encoder().encode(workout)
         try await db.collection("workouts").document(workout.id).setData(encodedWorkout)
+        print("DEBUG: Saved workout to workouts collection")
         
         // Create and save workout summary
         if let currentUser = Auth.auth().currentUser {
@@ -156,28 +151,27 @@ class WorkoutViewModel: ObservableObject {
             let user = try userDoc.data(as: User.self)
             
             // Create exercise summaries
-            let exerciseSummaries = workout.exercises.map { exercise -> WorkoutSummary.Exercise in
-                print("Creating summary for exercise: \(exercise.name)")
-                print("Number of sets to save: \(exercise.sets.count)")
+            let exerciseSummaries = exercises.map { exercise -> WorkoutSummary.Exercise in
+                print("DEBUG: Creating summary for exercise: \(exercise.name)")
+                print("DEBUG: Number of sets to save: \(exercise.sets.count)")
                 
                 let sets = exercise.sets.map { set -> WorkoutSummary.Exercise.Set in
-                    print("Converting set: \(set.weight)lbs × \(set.reps) reps")
+                    print("DEBUG: Converting set: \(set.weight)lbs × \(set.reps) reps")
                     return WorkoutSummary.Exercise.Set(
                         weight: set.weight,
-                        reps: set.reps
+                        reps: set.reps,
+                        isPR: false
                     )
                 }
                 
                 return WorkoutSummary.Exercise(
                     exerciseName: exercise.name,
                     imageUrl: exercise.gifUrl,
-                    targetMuscle: exercise.target,
-                    sets: sets
+                    targetMuscle: exercise.target ?? "Other",
+                    sets: sets,
+                    hasPR: false
                 )
             }
-            
-            // Create personal records dictionary
-            let personalRecords: [String: PersonalRecord] = [:]
             
             // Create workout summary
             let summary = WorkoutSummary(
@@ -187,69 +181,26 @@ class WorkoutViewModel: ObservableObject {
                 userProfileImageUrl: user.profileImageUrl,
                 workoutTitle: workout.name,
                 workoutNotes: workout.notes,
-                date: workout.createdAt,
+                createdAt: workout.createdAt,
                 duration: Int(workout.duration / 60), // Convert seconds to minutes
                 totalVolume: calculateVolume(),
                 fistBumps: 0,
                 comments: 0,
                 exercises: exerciseSummaries,
-                personalRecords: personalRecords
+                personalRecords: [:]
             )
             
-            print("Final workout summary:")
-            print("Number of exercises: \(summary.exercises.count)")
-            
-            // Check for PRs before saving
-            let prService = PersonalRecordService()
-            var updatedSummary = summary
-            var newPRs: [String: PersonalRecord] = [:]
-            
-            for (exerciseIndex, exercise) in summary.exercises.enumerated() {
-                if let isPR = try? await prService.checkAndUpdatePR(
-                    userId: user.id ?? "",
-                    exercise: exercise,
-                    workoutId: workout.id
-                ), isPR {
-                    // Update exercise to mark PR
-                    var updatedExercise = exercise
-                    updatedExercise.hasPR = true
-                    
-                    // Find the best set and mark it as PR
-                    if let bestSet = exercise.bestSet,
-                       let bestSetIndex = exercise.sets.firstIndex(where: { $0.volume == bestSet.volume }) {
-                        var updatedSets = exercise.sets
-                        updatedSets[bestSetIndex].isPR = true
-                        updatedExercise.sets = updatedSets
-                        
-                        // Create PR record
-                        let pr = PersonalRecord(
-                            id: UUID().uuidString,
-                            exerciseName: exercise.exerciseName,
-                            weight: bestSet.weight,
-                            reps: bestSet.reps,
-                            oneRepMax: bestSet.oneRepMax,
-                            date: workout.createdAt,
-                            workoutId: workout.id,
-                            userId: user.id ?? ""
-                        )
-                        newPRs[exercise.exerciseName] = pr
-                        
-                        // Update exercise in summary
-                        var updatedExercises = updatedSummary.exercises
-                        updatedExercises[exerciseIndex] = updatedExercise
-                        updatedSummary.exercises = updatedExercises
-                    }
-                }
-            }
-            
-            if !newPRs.isEmpty {
-                updatedSummary.personalRecords = newPRs
-            }
+            print("DEBUG: Final workout summary:")
+            print("DEBUG: Title: \(summary.workoutTitle)")
+            print("DEBUG: Number of exercises: \(summary.exercises.count)")
+            print("DEBUG: Created at: \(summary.createdAt)")
             
             // Save the workout summary
-            try await db.collection("workout_summaries")
+            let encodedSummary = try Firestore.Encoder().encode(summary)
+            try await db.collection("workoutSummaries")
                 .document(workout.id)
-                .setData(from: updatedSummary)
+                .setData(encodedSummary)
+            print("DEBUG: Saved workout summary to workoutSummaries collection")
             
             // Update user's workout stats
             var userData: [String: Any] = [:]
@@ -264,6 +215,7 @@ class WorkoutViewModel: ObservableObject {
             try await db.collection("users")
                 .document(currentUser.uid)
                 .updateData(userData)
+            print("DEBUG: Updated user workout stats")
         }
         
         // Reset the workout state
@@ -301,7 +253,7 @@ class WorkoutViewModel: ObservableObject {
             return WorkoutSummary.Exercise(
                 exerciseName: exercise.name,
                 imageUrl: exercise.gifUrl,
-                targetMuscle: exercise.target,
+                targetMuscle: exercise.target ?? "Other",
                 sets: exercise.sets.map { set in
                     WorkoutSummary.Exercise.Set(
                         weight: set.weight,
@@ -321,7 +273,7 @@ class WorkoutViewModel: ObservableObject {
             userProfileImageUrl: user.profileImageUrl,
             workoutTitle: workout.name,
             workoutNotes: workout.notes,
-            date: workout.createdAt,
+            createdAt: workout.createdAt,
             duration: Int(workout.duration / 60), // Convert seconds to minutes
             totalVolume: calculateVolume(),
             fistBumps: workout.likes,

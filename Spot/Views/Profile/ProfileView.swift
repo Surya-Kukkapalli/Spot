@@ -21,90 +21,150 @@ struct ProfileView: View {
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    ProfileHeaderSection(
-                        user: isCurrentUser ? authViewModel.currentUser : userViewModel.user,
-                        selectedPhotoItem: $selectedPhotoItem,
-                        onPhotoChange: handlePhotoChange,
-                        isCurrentUser: isCurrentUser
-                    )
-                    
-                    StatsGridSection(viewModel: viewModel)
-                    
-                    WorkoutChartSection(
-                        viewModel: viewModel,
-                        selectedMetric: $selectedMetric
-                    )
-                    
-                    NavigationGridSection(userId: userId ?? authViewModel.currentUser?.id ?? "")
-
-                    WorkoutHistorySection(viewModel: viewModel)
+            mainContent
+                .navigationTitle(navigationTitle)
+                .toolbar { toolbarContent }
+                .sheet(isPresented: $showEditProfile) {
+                    EditProfileView()
                 }
-            }
-            .navigationTitle(isCurrentUser ? (authViewModel.currentUser?.username ?? "") : (userViewModel.user?.username ?? ""))
-            .toolbar {
-                if isCurrentUser {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Menu {
-                            NavigationLink {
-                                SettingsView()
-                            } label: {
-                                Label("Settings", systemImage: "gear")
-                            }
-                            
-                            Button("Sign Out", role: .destructive) {
-                                showSignOutAlert = true
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis")
+                .alert("Sign Out", isPresented: $showSignOutAlert) {
+                    signOutAlert
+                }
+                .task { await loadData() }
+                .refreshable { await loadData() }
+        }
+    }
+    
+    private var mainContent: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                let displayUser = isCurrentUser ? authViewModel.currentUser : userViewModel.user
+                
+                ProfileHeaderSection(
+                    user: displayUser,
+                    selectedPhotoItem: $selectedPhotoItem,
+                    onPhotoChange: handlePhotoChange,
+                    isCurrentUser: isCurrentUser
+                )
+                
+                // Profile Stats with Navigation
+                HStack(spacing: 40) {
+                    NavigationLink(destination: WorkoutHistoryView(userId: displayUser?.id ?? "")) {
+                        VStack {
+                            Text("\(displayUser?.workoutsCompleted ?? 0)")
+                                .font(.title2)
+                                .bold()
+                            Text("Workouts")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    NavigationLink(destination: FollowersView(userId: displayUser?.id ?? "")) {
+                        VStack {
+                            Text("\(displayUser?.followers ?? 0)")
+                                .font(.title2)
+                                .bold()
+                            Text("Followers")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    NavigationLink(destination: FollowingView(userId: displayUser?.id ?? "")) {
+                        VStack {
+                            Text("\(displayUser?.following ?? 0)")
+                                .font(.title2)
+                                .bold()
+                            Text("Following")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
                     }
                 }
-            }
-            .sheet(isPresented: $showEditProfile) {
-                EditProfileView()
-            }
-            .alert("Sign Out", isPresented: $showSignOutAlert) {
-                Button("Cancel", role: .cancel) { }
-                Button("Sign Out", role: .destructive) {
-                    try? authViewModel.signOut()
-                }
-            }
-            .task {
-                let targetUserId = userId ?? authViewModel.currentUser?.id
-                if let targetUserId = targetUserId {
-                    await viewModel.fetchUserWorkouts(for: targetUserId)
-                    if !isCurrentUser {
-                        await userViewModel.fetchUser(userId: targetUserId)
+                .padding(.vertical)
+                
+                WorkoutChartSection(
+                    viewModel: viewModel,
+                    selectedMetric: $selectedMetric
+                )
+                
+                NavigationGridSection(userId: displayUser?.id ?? "")
+                
+                if !viewModel.workoutSummaries.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Recent Workouts")
+                            .font(.title3)
+                            .bold()
+                            .padding(.horizontal)
+                        
+                        ForEach(viewModel.workoutSummaries.prefix(3)) { workout in
+                            NavigationLink(destination: WorkoutDetailView(workout: workout)) {
+                                WorkoutSummaryCard(workout: workout)
+                            }
+                        }
+                        
+                        NavigationLink(destination: WorkoutHistoryView(userId: displayUser?.id ?? "")) {
+                            Text("View All")
+                                .font(.subheadline)
+                                .foregroundColor(.blue)
+                                .padding()
+                                .frame(maxWidth: .infinity)
+                                .background(Color.secondary.opacity(0.1))
+                                .cornerRadius(10)
+                        }
+                        .padding(.horizontal)
                     }
                 }
             }
-            .refreshable {
-                let targetUserId = userId ?? authViewModel.currentUser?.id
-                if let targetUserId = targetUserId {
-                    await viewModel.fetchUserWorkouts(for: targetUserId)
-                    if !isCurrentUser {
-                        await userViewModel.fetchUser(userId: targetUserId)
+            .padding(.vertical)
+        }
+    }
+    
+    private var navigationTitle: String {
+        isCurrentUser ? (authViewModel.currentUser?.username ?? "") : (userViewModel.user?.username ?? "")
+    }
+    
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarTrailing) {
+            if isCurrentUser {
+                Menu {
+                    NavigationLink {
+                        SettingsView()
+                    } label: {
+                        Label("Settings", systemImage: "gear")
                     }
+                    
+                    Button("Sign Out", role: .destructive) {
+                        showSignOutAlert = true
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
                 }
             }
+        }
+    }
+    
+    private var signOutAlert: some View {
+        Group {
+            Button("Cancel", role: .cancel) { }
+            Button("Sign Out", role: .destructive) {
+                try? authViewModel.signOut()
+            }
+        }
+    }
+    
+    private func loadData() async {
+        let targetUserId = userId ?? authViewModel.currentUser?.id ?? ""
+        await viewModel.fetchUserWorkouts(for: targetUserId)
+        if !isCurrentUser {
+            await userViewModel.fetchUser(userId: targetUserId)
         }
     }
     
     // TODO: Implement photo feature for profiles later
     private func handlePhotoChange() async {
         print("will implement later")
-//        if let data = try? await selectedPhotoItem?.loadTransferable(type: Data.self),
-//           let image = UIImage(data: data),
-//           let userId = authViewModel.currentUser?.id {
-//            do {
-//                let url = try await viewModel.uploadProfileImage(image, for: userId)
-//                try await authViewModel.updateProfile(profileImageUrl: url)
-//            } catch {
-//                print("Error uploading profile image: \(error)")
-//            }
-//        }
     }
 }
 

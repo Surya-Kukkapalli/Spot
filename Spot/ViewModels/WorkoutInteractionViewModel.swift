@@ -79,7 +79,7 @@ class WorkoutInteractionViewModel: ObservableObject {
                             weight: maxVolumeSet.weight,
                             reps: maxVolumeSet.reps,
                             oneRepMax: maxVolumeSet.oneRepMax,
-                            date: workout.date,
+                            date: workout.createdAt,
                             workoutId: workoutId,
                             userId: userId
                         )

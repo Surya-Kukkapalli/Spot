@@ -7,13 +7,18 @@ struct CreateWorkoutTemplateView: View {
     @StateObject private var workoutViewModel = WorkoutViewModel()
     @State private var workoutTitle = ""
     @State private var description = ""
+    @State private var makePublic = false
     @State private var showExerciseSearch = false
     @State private var selectedExercises: [Exercise] = []
     
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                TitleSection(workoutTitle: $workoutTitle, description: $description)
+                TitleSection(
+                    workoutTitle: $workoutTitle,
+                    description: $description,
+                    makePublic: $makePublic
+                )
                 
                 if selectedExercises.isEmpty {
                     EmptyStateView(showExerciseSearch: $showExerciseSearch)
@@ -52,21 +57,21 @@ struct CreateWorkoutTemplateView: View {
     
     private func saveTemplate() {
         Task {
-            guard let userId = Auth.auth().currentUser?.uid else { return }
-            
-            print("DEBUG: Saving template with \(selectedExercises.count) exercises")
-            print("DEBUG: Exercise names: \(selectedExercises.map { $0.name })")
-            
-            let workout = Workout(
-                id: UUID().uuidString,
-                userId: userId,
-                name: workoutTitle,
-                exercises: selectedExercises
-            )
-            
-            try? await viewModel.createTemplate(from: workout, description: description, isPublic: false)
-            await viewModel.fetchUserTemplates() // Refresh templates
-            dismiss()
+            if let userId = Auth.auth().currentUser?.uid {
+                try? await viewModel.createTemplate(
+                    from: Workout(
+                        id: UUID().uuidString,
+                        userId: userId,
+                        name: workoutTitle,
+                        exercises: selectedExercises,
+                        notes: description
+                    ),
+                    description: description.isEmpty ? nil : description,
+                    isPublic: makePublic
+                )
+                await viewModel.fetchUserTemplates()
+                dismiss()
+            }
         }
     }
 }
@@ -75,19 +80,18 @@ struct CreateWorkoutTemplateView: View {
 private struct TitleSection: View {
     @Binding var workoutTitle: String
     @Binding var description: String
+    @Binding var makePublic: Bool
     
     var body: some View {
-        VStack(spacing: 0) {
-            TextField("Workout Template Title", text: $workoutTitle)
-                .font(.title)
-                .padding()
-                .background(Color(.systemBackground))
+        Form {
+            Section {
+                TextField("Workout Title", text: $workoutTitle)
+                TextField("Description (optional)", text: $description)
+            }
             
-            TextField("Description (optional)", text: $description)
-                .font(.subheadline)
-                .padding(.horizontal)
-                .padding(.bottom)
-                .background(Color(.systemBackground))
+            Section {
+                Toggle("Make Template Public", isOn: $makePublic)
+            }
         }
     }
 }

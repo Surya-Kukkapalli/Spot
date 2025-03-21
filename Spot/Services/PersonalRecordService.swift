@@ -5,54 +5,38 @@ class PersonalRecordService {
     private let db = Firestore.firestore()
     
     func checkAndUpdatePR(userId: String, exercise: WorkoutSummary.Exercise, workoutId: String) async throws -> Bool {
-        let exerciseName = exercise.exerciseName.replacingOccurrences(of: "/", with: "_")
-        let exerciseRef = db.collection("users").document(userId)
-            .collection("personal_records").document(exerciseName)
+        guard let bestSet = exercise.bestSet else { return false }
         
-        let result = try await exerciseRef.getDocument()
-        let currentOneRepMax = exercise.bestSet?.weight ?? 0
-        let bestSet = exercise.bestSet
+        let exerciseRef = db.collection("users")
+            .document(userId)
+            .collection("exerciseRecords")
+            .document(exercise.exerciseName)
         
-        if !result.exists {
-            // No PR exists yet, create one
-            if let set = bestSet {
-                try await exerciseRef.setData([
-                    "exerciseName": exercise.exerciseName,
-                    "weight": set.weight,
-                    "reps": set.reps,
-                    "oneRepMax": currentOneRepMax,
-                    "date": Timestamp(date: Date()),
-                    "workoutId": workoutId,
-                    "userId": userId
-                ])
+        let snapshot = try await exerciseRef.getDocument()
+        
+        if let data = snapshot.data(),
+           let currentMaxWeight = data["maxWeight"] as? Double {
+            // Check if this is a new PR
+            if bestSet.weight > currentMaxWeight {
+                try await updatePersonalRecord(
+                    userId: userId,
+                    exerciseName: exercise.exerciseName,
+                    weight: bestSet.weight,
+                    reps: bestSet.reps
+                )
                 return true
             }
             return false
+        } else {
+            // No previous record exists, so this is a PR
+            try await updatePersonalRecord(
+                userId: userId,
+                exerciseName: exercise.exerciseName,
+                weight: bestSet.weight,
+                reps: bestSet.reps
+            )
+            return true
         }
-        
-        // Check if current set beats the PR
-        guard let data = result.data(),
-              let prWeight = data["weight"] as? Double,
-              let prReps = data["reps"] as? Int,
-              let prOneRepMax = data["oneRepMax"] as? Double else {
-            return false
-        }
-        
-        if currentOneRepMax > prOneRepMax {
-            // Update PR
-            if let set = bestSet {
-                try await exerciseRef.updateData([
-                    "weight": set.weight,
-                    "reps": set.reps,
-                    "oneRepMax": currentOneRepMax,
-                    "date": Timestamp(date: Date()),
-                    "workoutId": workoutId
-                ])
-                return true
-            }
-        }
-        
-        return false
     }
     
     func getPR(userId: String, exerciseName: String) async throws -> PersonalRecord? {
@@ -78,5 +62,31 @@ class PersonalRecordService {
         return try snapshot.documents.compactMap { document in
             try document.data(as: PersonalRecord.self)
         }
+    }
+    
+    private func updatePersonalRecord(userId: String, exerciseName: String, weight: Double, reps: Int) async throws {
+        let exerciseRef = db.collection("users")
+            .document(userId)
+            .collection("exerciseRecords")
+            .document(exerciseName)
+        
+        try await exerciseRef.setData([
+            "maxWeight": weight,
+            "reps": reps,
+            "updatedAt": Timestamp(date: Date())
+        ], merge: true)
+    }
+    
+    func getPersonalRecord(userId: String, exerciseName: String) async throws -> (weight: Double, reps: Int)? {
+        let exerciseRef = db.collection("users").document(userId).collection("exerciseRecords").document(exerciseName)
+        let snapshot = try await exerciseRef.getDocument()
+        
+        guard let data = snapshot.data(),
+              let weight = data["maxWeight"] as? Double,
+              let reps = data["reps"] as? Int else {
+            return nil
+        }
+        
+        return (weight, reps)
     }
 } 

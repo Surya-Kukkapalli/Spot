@@ -9,14 +9,36 @@ class AuthViewModel: ObservableObject {
     @Published var currentUser: User?
     @Published var isLoading = false
     @Published var error: String?
+    @Published var isAuthenticated = false
+    @Published var showError = false
+    @Published var errorMessage = ""
     
     private let db = Firestore.firestore()
+    private let auth = Auth.auth()
     
     init() {
+        print("DEBUG: Initializing AuthViewModel")
         self.userSession = Auth.auth().currentUser
+        print("DEBUG: Initial userSession: \(String(describing: self.userSession?.uid))")
+        setupAuthStateListener()
         
         Task {
             await fetchUser()
+        }
+    }
+    
+    private func setupAuthStateListener() {
+        auth.addStateDidChangeListener { [weak self] _, user in
+            print("DEBUG: Auth state changed - user: \(String(describing: user?.uid))")
+            Task {
+                if let user = user {
+                    await self?.fetchUser(userId: user.uid)
+                } else {
+                    self?.currentUser = nil
+                    self?.isAuthenticated = false
+                    print("DEBUG: User signed out - clearing session")
+                }
+            }
         }
     }
     
@@ -59,8 +81,7 @@ class AuthViewModel: ObservableObject {
             // Create initial user data
             let userData: [String: Any] = [
                 "username": username,
-                "firstName": firstName,
-                "lastName": lastName,
+                "name": "\(firstName) \(lastName)",
                 "email": email,
                 "isInfluencer": false,
                 "followers": 0,
@@ -82,8 +103,7 @@ class AuthViewModel: ObservableObject {
             let user = User(
                 id: result.user.uid,
                 username: username,
-                firstName: firstName,
-                lastName: lastName,
+                name: "\(firstName) \(lastName)",
                 email: email,
                 profileImageUrl: nil,
                 bio: nil,
@@ -125,39 +145,43 @@ class AuthViewModel: ObservableObject {
     
     func fetchUser() async {
         guard let uid = Auth.auth().currentUser?.uid else {
-            print("No authenticated user found")
+            print("DEBUG: No authenticated user found")
             return
         }
         
         do {
+            print("DEBUG: Fetching user data for uid: \(uid)")
             let docRef = db.collection("users").document(uid)
             let snapshot = try await docRef.getDocument()
             
             guard snapshot.exists else {
-                print("User document does not exist")
+                print("DEBUG: User document does not exist")
                 return
             }
             
-            print("Raw user data: \(snapshot.data() ?? [:])")
+            print("DEBUG: Raw user data: \(snapshot.data() ?? [:])")
             
-            if let user = try? snapshot.data(as: User.self) {
+            if var user = try? snapshot.data(as: User.self) {
+                // Set the user ID from the document ID
+                user.id = snapshot.documentID
+                
                 await MainActor.run {
                     self.currentUser = user
-                    print("User fetched successfully: \(user.username)")
-                    print("User bio: \(user.bio ?? "nil")")
+                    self.isAuthenticated = true
+                    print("DEBUG: User fetched successfully: \(user.username)")
+                    print("DEBUG: User ID: \(user.id ?? "nil")")
                 }
             } else {
-                print("Failed to decode user data")
-                // Try manual decoding to see what's available
+                print("DEBUG: Failed to decode user data")
                 if let data = snapshot.data() {
-                    print("Available fields in document:")
+                    print("DEBUG: Available fields in document:")
                     for (key, value) in data {
                         print("\(key): \(value)")
                     }
                 }
             }
         } catch {
-            print("Error fetching user: \(error.localizedDescription)")
+            print("DEBUG: Error fetching user: \(error.localizedDescription)")
         }
     }
     
@@ -183,8 +207,7 @@ class AuthViewModel: ObservableObject {
         // Update user data
         let userData: [String: Any] = [
             "username": username,
-            "firstName": firstName,
-            "lastName": lastName,
+            "name": "\(firstName) \(lastName)",
             "bio": bio ?? NSNull()
         ]
         
@@ -193,8 +216,7 @@ class AuthViewModel: ObservableObject {
         // Update local user object
         if var updatedUser = currentUser {
             updatedUser.username = username
-            updatedUser.firstName = firstName
-            updatedUser.lastName = lastName
+            updatedUser.name = "\(firstName) \(lastName)"
             updatedUser.bio = bio
             self.currentUser = updatedUser
         }
@@ -251,6 +273,33 @@ class AuthViewModel: ObservableObject {
         // Clear local state
         self.userSession = nil
         self.currentUser = nil
+    }
+    
+    func fetchUser(userId: String) async {
+        do {
+            let document = try await db.collection("users").document(userId).getDocument()
+            currentUser = try document.data(as: User.self)
+            isAuthenticated = true
+        } catch {
+            print("Error fetching user: \(error)")
+            showError = true
+            errorMessage = "Error fetching user data"
+        }
+    }
+    
+    func updateProfile(bio: String?) async {
+        guard let userId = auth.currentUser?.uid else { return }
+        
+        do {
+            var data: [String: Any] = ["updatedAt": Date()]
+            if let bio = bio { data["bio"] = bio }
+            
+            try await db.collection("users").document(userId).updateData(data)
+            await fetchUser(userId: userId)
+        } catch {
+            showError = true
+            errorMessage = error.localizedDescription
+        }
     }
 }
 

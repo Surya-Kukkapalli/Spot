@@ -219,31 +219,29 @@ struct WorkoutTemplateCard: View {
 }
 
 struct NewProgramSheet: View {
-    @Environment(\.dismiss) var dismiss
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject var viewModel: WorkoutProgramViewModel
     @State private var name = ""
     @State private var description = ""
-    @State private var selectedTemplates: Set<String> = []
+    @State private var selectedTemplates = Set<String>()
+    @State private var makePublic = false
     
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     TextField("Program Name", text: $name)
-                    TextField("Description", text: $description)
+                    TextField("Description (optional)", text: $description)
                 }
                 
-                Section("Select Workouts") {
+                Section {
+                    Toggle("Make Program Public", isOn: $makePublic)
+                }
+                
+                Section {
                     ForEach(viewModel.templates) { template in
                         HStack {
-                            VStack(alignment: .leading) {
-                                Text(template.name)
-                                if let description = template.description {
-                                    Text(description)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
+                            Text(template.name)
                             Spacer()
                             if selectedTemplates.contains(template.id) {
                                 Image(systemName: "checkmark")
@@ -259,6 +257,8 @@ struct NewProgramSheet: View {
                             }
                         }
                     }
+                } header: {
+                    Text("Select Workouts")
                 }
             }
             .navigationTitle("New Program")
@@ -272,7 +272,8 @@ struct NewProgramSheet: View {
                         try? await viewModel.createProgram(
                             name: name,
                             description: description.isEmpty ? nil : description,
-                            templates: templates
+                            templates: templates,
+                            isPublic: makePublic
                         )
                         await viewModel.fetchUserPrograms() // Refresh programs
                         dismiss()

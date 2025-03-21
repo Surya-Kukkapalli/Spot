@@ -21,7 +21,7 @@ struct WorkoutSummary: Identifiable, Codable, Hashable {
     let userProfileImageUrl: String?
     let workoutTitle: String
     let workoutNotes: String?
-    let date: Date
+    let createdAt: Date
     let duration: Int
     let totalVolume: Int
     var fistBumps: Int
@@ -30,14 +30,14 @@ struct WorkoutSummary: Identifiable, Codable, Hashable {
     var personalRecords: [String: PersonalRecord]?
     var location: String?
     
-    init(id: String, userId: String, username: String, userProfileImageUrl: String?, workoutTitle: String, workoutNotes: String?, date: Date, duration: Int, totalVolume: Int, fistBumps: Int = 0, comments: Int = 0, exercises: [Exercise], personalRecords: [String: PersonalRecord]? = nil, location: String? = nil) {
+    init(id: String, userId: String, username: String, userProfileImageUrl: String?, workoutTitle: String, workoutNotes: String?, createdAt: Date, duration: Int, totalVolume: Int, fistBumps: Int = 0, comments: Int = 0, exercises: [Exercise], personalRecords: [String: PersonalRecord]? = nil, location: String? = nil) {
         self.id = id
         self.userId = userId
         self.username = username
         self.userProfileImageUrl = userProfileImageUrl
         self.workoutTitle = workoutTitle
         self.workoutNotes = workoutNotes
-        self.date = date
+        self.createdAt = createdAt
         self.duration = duration
         self.totalVolume = totalVolume
         self.fistBumps = fistBumps
@@ -49,7 +49,7 @@ struct WorkoutSummary: Identifiable, Codable, Hashable {
     
     enum CodingKeys: String, CodingKey {
         case id, userId, username, userProfileImageUrl, workoutTitle, workoutNotes
-        case date, duration, totalVolume, fistBumps, comments, exercises
+        case createdAt, duration, totalVolume, fistBumps, comments, exercises
         case personalRecords, location
     }
     
@@ -63,7 +63,7 @@ struct WorkoutSummary: Identifiable, Codable, Hashable {
         userProfileImageUrl = try container.decodeIfPresent(String.self, forKey: .userProfileImageUrl)
         workoutTitle = try container.decode(String.self, forKey: .workoutTitle)
         workoutNotes = try container.decodeIfPresent(String.self, forKey: .workoutNotes)
-        date = try container.decode(Date.self, forKey: .date)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
         duration = try container.decode(Int.self, forKey: .duration)
         totalVolume = try container.decode(Int.self, forKey: .totalVolume)
         fistBumps = try container.decode(Int.self, forKey: .fistBumps)
@@ -84,7 +84,7 @@ struct WorkoutSummary: Identifiable, Codable, Hashable {
         try container.encodeIfPresent(userProfileImageUrl, forKey: .userProfileImageUrl)
         try container.encode(workoutTitle, forKey: .workoutTitle)
         try container.encodeIfPresent(workoutNotes, forKey: .workoutNotes)
-        try container.encode(date, forKey: .date)
+        try container.encode(createdAt, forKey: .createdAt)
         try container.encode(duration, forKey: .duration)
         try container.encode(totalVolume, forKey: .totalVolume)
         try container.encode(fistBumps, forKey: .fistBumps)
@@ -225,13 +225,13 @@ struct WorkoutSummary: Identifiable, Codable, Hashable {
     static func == (lhs: WorkoutSummary, rhs: WorkoutSummary) -> Bool {
         return lhs.id == rhs.id &&
                lhs.userId == rhs.userId &&
-               lhs.date == rhs.date
+               lhs.createdAt == rhs.createdAt
     }
     
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
         hasher.combine(userId)
-        hasher.combine(date)
+        hasher.combine(createdAt)
     }
 }
 

@@ -61,8 +61,9 @@ struct EditProfileView: View {
             .onAppear {
                 if let user = authViewModel.currentUser {
                     username = user.username
-                    firstName = user.firstName
-                    lastName = user.lastName
+                    let nameParts = (user.name ?? "").split(separator: " ")
+                    firstName = String(nameParts.first ?? "")
+                    lastName = nameParts.count > 1 ? String(nameParts.dropFirst().joined(separator: " ")) : ""
                     bio = user.bio ?? ""
                 }
             }

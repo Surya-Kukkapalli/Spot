@@ -1,6 +1,7 @@
 import SwiftUI
 import Firebase
 import FirebaseFirestore
+import FirebaseAuth
 
 @MainActor
 class FeedViewModel: ObservableObject {
@@ -12,41 +13,70 @@ class FeedViewModel: ObservableObject {
     
     func fetchWorkoutSummaries() async {
         isLoading = true
+        workoutSummaries = [] // Clear existing workouts
         
         do {
-            let snapshot = try await db.collection("workout_summaries")
-                .order(by: "date", descending: true)
+            guard let userId = Auth.auth().currentUser?.uid else {
+                error = "User not logged in"
+                isLoading = false
+                return
+            }
+            
+            // Fetch current user's workouts
+            let userWorkoutsSnapshot = try await db.collection("workoutSummaries")
+                .whereField("userId", isEqualTo: userId)
+                .order(by: "createdAt", descending: true)
                 .limit(to: 20)
                 .getDocuments()
             
-            print("Found \(snapshot.documents.count) workout summary documents")
+            print("Found \(userWorkoutsSnapshot.documents.count) user workouts")
             
-            self.workoutSummaries = snapshot.documents.compactMap { document in
+            var allWorkouts = userWorkoutsSnapshot.documents.compactMap { document in
                 do {
-                    print("Attempting to decode document: \(document.documentID)")
-                    print("Document data: \(document.data())")
-                    
-                    // Create a mutable copy of the document data
-                    var data = document.data()
-                    // Add the document ID to the data dictionary
-                    data["id"] = document.documentID
-                    
-                    // Create a custom decoder that can handle Firestore types
-                    let decoder = Firestore.Decoder()
-                    let summary = try decoder.decode(WorkoutSummary.self, from: data)
-                    print("Successfully decoded workout summary: \(summary.workoutTitle)")
-                    return summary
+                    return try document.data(as: WorkoutSummary.self)
                 } catch {
-                    print("Error decoding workout summary document: \(error)")
-                    print("Document data that failed to decode: \(document.data())")
+                    print("Error decoding workout summary: \(error)")
                     return nil
                 }
             }
             
-            print("Successfully decoded \(self.workoutSummaries.count) workout summaries")
+            // Fetch followed users' workouts if any
+            let userDoc = try await db.collection("users").document(userId).getDocument()
+            let user = try userDoc.data(as: User.self)
+            
+            if !user.followingIds.isEmpty {
+                print("Fetching workouts for \(user.followingIds.count) followed users")
+                
+                let followedWorkoutsSnapshot = try await db.collection("workoutSummaries")
+                    .whereField("userId", in: user.followingIds)
+                    .order(by: "createdAt", descending: true)
+                    .limit(to: 20)
+                    .getDocuments()
+                
+                print("Found \(followedWorkoutsSnapshot.documents.count) followed user workouts")
+                
+                let followedWorkouts = followedWorkoutsSnapshot.documents.compactMap { document in
+                    do {
+                        return try document.data(as: WorkoutSummary.self)
+                    } catch {
+                        print("Error decoding followed workout summary: \(error)")
+                        return nil
+                    }
+                }
+                
+                allWorkouts.append(contentsOf: followedWorkouts)
+            }
+            
+            // Sort all workouts by date
+            allWorkouts.sort { $0.createdAt > $1.createdAt }
+            
+            await MainActor.run {
+                self.workoutSummaries = allWorkouts
+                print("Total workouts loaded: \(allWorkouts.count)")
+            }
         } catch {
+            print("Error fetching workouts: \(error)")
             self.error = error.localizedDescription
-            print("Error fetching workout summaries: \(error)")
         }
         
         isLoading = false

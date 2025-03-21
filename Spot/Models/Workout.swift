@@ -2,7 +2,7 @@ import Foundation
 import FirebaseFirestore
 
 struct Workout: Identifiable, Codable {
-    let id: String
+    var id: String
     let userId: String
     var name: String
     var exercises: [Exercise]
