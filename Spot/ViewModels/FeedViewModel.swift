@@ -22,21 +22,58 @@ class FeedViewModel: ObservableObject {
                 return
             }
             
-            // Fetch current user's workouts
-            let userWorkoutsSnapshot = try await db.collection("workoutSummaries")
+            print("DEBUG: Fetching workouts for feed - user: \(userId)")
+            
+            // First try workoutSummaries collection for current user
+            let userSummariesSnapshot = try await db.collection("workoutSummaries")
                 .whereField("userId", isEqualTo: userId)
                 .order(by: "createdAt", descending: true)
-                .limit(to: 20)
                 .getDocuments()
             
-            print("Found \(userWorkoutsSnapshot.documents.count) user workouts")
+            print("DEBUG: Found \(userSummariesSnapshot.documents.count) user workout summaries")
             
-            var allWorkouts = userWorkoutsSnapshot.documents.compactMap { document in
+            var allWorkouts = userSummariesSnapshot.documents.compactMap { document -> WorkoutSummary? in
                 do {
-                    return try document.data(as: WorkoutSummary.self)
+                    let summary = try document.data(as: WorkoutSummary.self)
+                    print("DEBUG: Successfully decoded workout summary: \(summary.workoutTitle)")
+                    return summary
                 } catch {
-                    print("Error decoding workout summary: \(error)")
+                    print("DEBUG: Error decoding workout summary: \(error)")
                     return nil
+                }
+            }
+            
+            // If no summaries found, try workouts collection
+            if allWorkouts.isEmpty {
+                print("DEBUG: No workout summaries found, checking workouts collection")
+                let workoutsSnapshot = try await db.collection("workouts")
+                    .whereField("userId", isEqualTo: userId)
+                    .order(by: "createdAt", descending: true)
+                    .getDocuments()
+                
+                print("DEBUG: Found \(workoutsSnapshot.documents.count) workouts")
+                
+                // Convert Workouts to WorkoutSummaries
+                let workouts = workoutsSnapshot.documents.compactMap { document -> Workout? in
+                    do {
+                        var workout = try document.data(as: Workout.self)
+                        workout.id = document.documentID
+                        print("DEBUG: Successfully decoded workout: \(workout.name)")
+                        return workout
+                    } catch {
+                        print("DEBUG: Error decoding workout: \(error)")
+                        return nil
+                    }
+                }
+                
+                // Get user data for creating summaries
+                let userDoc = try await db.collection("users").document(userId).getDocument()
+                if let user = try? userDoc.data(as: User.self) {
+                    let userWorkouts = workouts.map { workout in
+                        print("DEBUG: Converting workout to summary: \(workout.name)")
+                        return createWorkoutSummary(from: workout, user: user)
+                    }
+                    allWorkouts.append(contentsOf: userWorkouts)
                 }
             }
             
@@ -45,26 +82,55 @@ class FeedViewModel: ObservableObject {
             let user = try userDoc.data(as: User.self)
             
             if !user.followingIds.isEmpty {
-                print("Fetching workouts for \(user.followingIds.count) followed users")
+                print("DEBUG: Fetching workouts for \(user.followingIds.count) followed users")
                 
-                let followedWorkoutsSnapshot = try await db.collection("workoutSummaries")
+                // Try workoutSummaries collection for followed users
+                let followedSummariesSnapshot = try await db.collection("workoutSummaries")
                     .whereField("userId", in: user.followingIds)
                     .order(by: "createdAt", descending: true)
-                    .limit(to: 20)
                     .getDocuments()
                 
-                print("Found \(followedWorkoutsSnapshot.documents.count) followed user workouts")
+                print("DEBUG: Found \(followedSummariesSnapshot.documents.count) followed user workout summaries")
                 
-                let followedWorkouts = followedWorkoutsSnapshot.documents.compactMap { document in
+                let followedSummaries = followedSummariesSnapshot.documents.compactMap { document -> WorkoutSummary? in
                     do {
                         return try document.data(as: WorkoutSummary.self)
                     } catch {
-                        print("Error decoding followed workout summary: \(error)")
+                        print("DEBUG: Error decoding followed workout summary: \(error)")
                         return nil
                     }
                 }
                 
-                allWorkouts.append(contentsOf: followedWorkouts)
+                allWorkouts.append(contentsOf: followedSummaries)
+                
+                // If no summaries found for followed users, try workouts collection
+                if followedSummaries.isEmpty {
+                    print("DEBUG: No workout summaries found for followed users, checking workouts collection")
+                    let followedWorkoutsSnapshot = try await db.collection("workouts")
+                        .whereField("userId", in: user.followingIds)
+                        .order(by: "createdAt", descending: true)
+                        .getDocuments()
+                    
+                    let followedWorkouts = followedWorkoutsSnapshot.documents.compactMap { document -> Workout? in
+                        do {
+                            var workout = try document.data(as: Workout.self)
+                            workout.id = document.documentID
+                            return workout
+                        } catch {
+                            print("DEBUG: Error decoding followed workout: \(error)")
+                            return nil
+                        }
+                    }
+                    
+                    // Get user data and convert workouts to summaries
+                    for workout in followedWorkouts {
+                        if let followedUserDoc = try? await db.collection("users").document(workout.userId).getDocument(),
+                           let followedUser = try? followedUserDoc.data(as: User.self) {
+                            let summary = createWorkoutSummary(from: workout, user: followedUser)
+                            allWorkouts.append(summary)
+                        }
+                    }
+                }
             }
             
             // Sort all workouts by date
@@ -72,13 +138,54 @@ class FeedViewModel: ObservableObject {
             
             await MainActor.run {
                 self.workoutSummaries = allWorkouts
-                print("Total workouts loaded: \(allWorkouts.count)")
+                print("DEBUG: Total workouts loaded for feed: \(allWorkouts.count)")
             }
         } catch {
-            print("Error fetching workouts: \(error)")
+            print("DEBUG: Error fetching workouts: \(error)")
             self.error = error.localizedDescription
         }
         
         isLoading = false
+    }
+    
+    private func createWorkoutSummary(from workout: Workout, user: User) -> WorkoutSummary {
+        // Create exercise summaries
+        let exerciseSummaries = workout.exercises.map { exercise -> WorkoutSummary.Exercise in
+            return WorkoutSummary.Exercise(
+                exerciseName: exercise.name,
+                imageUrl: exercise.gifUrl,
+                targetMuscle: exercise.target ?? "Other",
+                sets: exercise.sets.map { set in
+                    WorkoutSummary.Exercise.Set(
+                        weight: set.weight,
+                        reps: set.reps
+                    )
+                }
+            )
+        }
+        
+        return WorkoutSummary(
+            id: workout.id,
+            userId: user.id ?? "",
+            username: user.username,
+            userProfileImageUrl: user.profileImageUrl,
+            workoutTitle: workout.name,
+            workoutNotes: workout.notes,
+            createdAt: workout.createdAt,
+            duration: Int(workout.duration / 60), // Convert seconds to minutes
+            totalVolume: calculateVolume(exercises: workout.exercises),
+            fistBumps: workout.likes ?? 0,
+            comments: workout.comments ?? 0,
+            exercises: exerciseSummaries,
+            personalRecords: [:] // We'll handle PRs separately if needed
+        )
+    }
+    
+    private func calculateVolume(exercises: [Exercise]) -> Int {
+        exercises.reduce(0) { total, exercise in
+            total + exercise.sets.reduce(0) { setTotal, set in
+                setTotal + Int(set.weight * Double(set.reps))
+            }
+        }
     }
 } 

@@ -76,7 +76,7 @@ struct FeedView: View {
                     LazyVStack(spacing: 16) {
                         ForEach(viewModel.workoutSummaries) { workout in
                             WorkoutSummaryCard(workout: workout)
-                                .padding(.horizontal)
+                                //.padding(.horizontal)
                                 .onTapGesture {
                                     selectedWorkout = workout
                                 }
