@@ -95,13 +95,10 @@ class CommentViewModel: ObservableObject {
             let docRef = try await db.collection("workout_comments").addDocument(from: comment)
             
             // Update comment count on workout
-            let workoutRef = db.collection("workout_summaries").document(workoutId)
-            try await workoutRef.updateData([
-                "comments": FieldValue.increment(Int64(1))
-            ])
+            try await updateCommentCount(for: workoutId, increment: true)
             
             // Get updated comment count
-            let workoutDoc = try await workoutRef.getDocument()
+            let workoutDoc = try await db.collection("workoutSummaries").document(workoutId).getDocument()
             let newCount = workoutDoc.data()?["comments"] as? Int ?? 0
             
             // Update local state
@@ -178,5 +175,13 @@ class CommentViewModel: ObservableObject {
         } catch {
             print("Error fetching liked users: \(error)")
         }
+    }
+    
+    private func updateCommentCount(for workoutId: String, increment: Bool) async throws {
+        let workoutRef = db.collection("workoutSummaries").document(workoutId)
+        let change = increment ? 1 : -1
+        try await workoutRef.updateData([
+            "comments": FieldValue.increment(Int64(change))
+        ])
     }
 } 

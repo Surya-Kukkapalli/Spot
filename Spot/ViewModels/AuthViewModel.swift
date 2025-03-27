@@ -249,7 +249,7 @@ class AuthViewModel: ObservableObject {
         }
         
         // Delete user's workouts
-        let workoutDocs = try await db.collection("workout_summaries")
+        let workoutDocs = try await db.collection("workoutSummaries")
             .whereField("userId", isEqualTo: userId)
             .getDocuments()
         

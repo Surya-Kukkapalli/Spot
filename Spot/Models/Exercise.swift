@@ -118,6 +118,7 @@ struct ExerciseSet: Identifiable, Codable, Equatable {
     var type: SetType = .normal
     var isCompleted: Bool = false
     var restInterval: TimeInterval = 90 // Default 90 seconds rest
+    var isPR: Bool = false
     
     enum SetType: String, Codable {
         case normal
@@ -127,13 +128,43 @@ struct ExerciseSet: Identifiable, Codable, Equatable {
         case superset
     }
     
+    var volume: Double {
+        return weight * Double(reps)
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case weight
+        case reps
+        case type
+        case isCompleted
+        case restInterval
+        case isPR
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        weight = try container.decode(Double.self, forKey: .weight)
+        reps = try container.decode(Int.self, forKey: .reps)
+        type = try container.decode(SetType.self, forKey: .type)
+        isCompleted = try container.decode(Bool.self, forKey: .isCompleted)
+        restInterval = try container.decode(TimeInterval.self, forKey: .restInterval)
+        isPR = try container.decodeIfPresent(Bool.self, forKey: .isPR) ?? false
+    }
+    
+    init(id: String) {
+        self.id = id
+    }
+    
     static func == (lhs: ExerciseSet, rhs: ExerciseSet) -> Bool {
         return lhs.id == rhs.id &&
                lhs.weight == rhs.weight &&
                lhs.reps == rhs.reps &&
                lhs.type == rhs.type &&
                lhs.isCompleted == rhs.isCompleted &&
-               lhs.restInterval == rhs.restInterval
+               lhs.restInterval == rhs.restInterval &&
+               lhs.isPR == rhs.isPR
     }
 }
 

@@ -150,27 +150,73 @@ class WorkoutViewModel: ObservableObject {
             let userDoc = try await db.collection("users").document(currentUser.uid).getDocument()
             let user = try userDoc.data(as: User.self)
             
-            // Create exercise summaries
-            let exerciseSummaries = exercises.map { exercise -> WorkoutSummary.Exercise in
-                print("DEBUG: Creating summary for exercise: \(exercise.name)")
-                print("DEBUG: Number of sets to save: \(exercise.sets.count)")
-                
-                let sets = exercise.sets.map { set -> WorkoutSummary.Exercise.Set in
-                    print("DEBUG: Converting set: \(set.weight)lbs × \(set.reps) reps")
-                    return WorkoutSummary.Exercise.Set(
-                        weight: set.weight,
-                        reps: set.reps,
-                        isPR: false
-                    )
+            // Create exercise summaries and check for PRs
+            let prService = PersonalRecordService()
+            var personalRecords: [String: PersonalRecord] = [:]
+            
+            let exerciseSummaries = try await withThrowingTaskGroup(of: (WorkoutSummary.Exercise, PersonalRecord?).self) { group in
+                for exercise in exercises {
+                    group.addTask {
+                        let sets = exercise.sets.map { set -> WorkoutSummary.Exercise.Set in
+                            return WorkoutSummary.Exercise.Set(
+                                weight: set.weight,
+                                reps: set.reps,
+                                isPR: false  // Will be updated if it's a PR
+                            )
+                        }
+                        
+                        var summaryExercise = WorkoutSummary.Exercise(
+                            exerciseName: exercise.name,
+                            imageUrl: exercise.gifUrl,
+                            targetMuscle: exercise.target ?? "Other",
+                            sets: sets,
+                            hasPR: false
+                        )
+                        
+                        // Check if any set is a PR
+                        if let bestSet = exercise.sets.max(by: { $0.volume < $1.volume }) {
+                            let isPR = try await prService.checkAndUpdatePR(
+                                userId: user.id ?? "",
+                                exercise: summaryExercise,
+                                workoutId: workout.id
+                            )
+                            
+                            if isPR {
+                                // Update the set that was a PR
+                                if let prSetIndex = summaryExercise.sets.firstIndex(where: { 
+                                    $0.weight == bestSet.weight && $0.reps == bestSet.reps 
+                                }) {
+                                    summaryExercise.sets[prSetIndex].isPR = true
+                                }
+                                summaryExercise.hasPR = true
+                                
+                                // Create PR record
+                                let pr = PersonalRecord(
+                                    id: UUID().uuidString,
+                                    exerciseName: exercise.name,
+                                    weight: bestSet.weight,
+                                    reps: bestSet.reps,
+                                    oneRepMax: OneRepMax.calculate(weight: bestSet.weight, reps: bestSet.reps),
+                                    date: workout.createdAt,
+                                    workoutId: workout.id,
+                                    userId: user.id ?? ""
+                                )
+                                return (summaryExercise, pr)
+                            }
+                        }
+                        
+                        return (summaryExercise, nil)
+                    }
                 }
                 
-                return WorkoutSummary.Exercise(
-                    exerciseName: exercise.name,
-                    imageUrl: exercise.gifUrl,
-                    targetMuscle: exercise.target ?? "Other",
-                    sets: sets,
-                    hasPR: false
-                )
+                var summaries: [WorkoutSummary.Exercise] = []
+                for try await (exercise, pr) in group {
+                    summaries.append(exercise)
+                    if let pr = pr {
+                        personalRecords[pr.exerciseName] = pr
+                    }
+                }
+                return summaries
             }
             
             // Create workout summary
@@ -184,10 +230,10 @@ class WorkoutViewModel: ObservableObject {
                 createdAt: workout.createdAt,
                 duration: Int(workout.duration / 60), // Convert seconds to minutes
                 totalVolume: calculateVolume(),
-                fistBumps: 0,
-                comments: 0,
+                fistBumps: workout.likes,
+                comments: workout.comments,
                 exercises: exerciseSummaries,
-                personalRecords: [:]
+                personalRecords: personalRecords
             )
             
             print("DEBUG: Final workout summary:")
@@ -247,24 +293,75 @@ class WorkoutViewModel: ObservableObject {
     }
 
     
-    func createWorkoutSummary(from workout: Workout, user: User) -> WorkoutSummary {
-        // Create exercise summaries
-        let exerciseSummaries = workout.exercises.map { exercise -> WorkoutSummary.Exercise in
-            return WorkoutSummary.Exercise(
-                exerciseName: exercise.name,
-                imageUrl: exercise.gifUrl,
-                targetMuscle: exercise.target ?? "Other",
-                sets: exercise.sets.map { set in
-                    WorkoutSummary.Exercise.Set(
-                        weight: set.weight,
-                        reps: set.reps
-                    )
-                }
-            )
-        }
+    func createWorkoutSummary(from workout: Workout, user: User) async throws -> WorkoutSummary {
+        // Create exercise summaries and check for PRs
+        let prService = PersonalRecordService()
+        var personalRecords: [String: PersonalRecord] = [:]
         
-        // Create personal records dictionary
-        let personalRecords: [String: PersonalRecord] = [:]
+        let exerciseSummaries = try await withThrowingTaskGroup(of: (WorkoutSummary.Exercise, PersonalRecord?).self) { group in
+            for exercise in workout.exercises {
+                group.addTask {
+                    let sets = exercise.sets.map { set -> WorkoutSummary.Exercise.Set in
+                        return WorkoutSummary.Exercise.Set(
+                            weight: set.weight,
+                            reps: set.reps,
+                            isPR: false  // Will be updated if it's a PR
+                        )
+                    }
+                    
+                    var summaryExercise = WorkoutSummary.Exercise(
+                        exerciseName: exercise.name,
+                        imageUrl: exercise.gifUrl,
+                        targetMuscle: exercise.target ?? "Other",
+                        sets: sets,
+                        hasPR: false
+                    )
+                    
+                    // Check if any set is a PR
+                    if let bestSet = exercise.sets.max(by: { $0.volume < $1.volume }) {
+                        let isPR = try await prService.checkAndUpdatePR(
+                            userId: user.id ?? "",
+                            exercise: summaryExercise,
+                            workoutId: workout.id
+                        )
+                        
+                        if isPR {
+                            // Update the set that was a PR
+                            if let prSetIndex = summaryExercise.sets.firstIndex(where: { 
+                                $0.weight == bestSet.weight && $0.reps == bestSet.reps 
+                            }) {
+                                summaryExercise.sets[prSetIndex].isPR = true
+                            }
+                            summaryExercise.hasPR = true
+                            
+                            // Create PR record
+                            let pr = PersonalRecord(
+                                id: UUID().uuidString,
+                                exerciseName: exercise.name,
+                                weight: bestSet.weight,
+                                reps: bestSet.reps,
+                                oneRepMax: OneRepMax.calculate(weight: bestSet.weight, reps: bestSet.reps),
+                                date: workout.createdAt,
+                                workoutId: workout.id,
+                                userId: user.id ?? ""
+                            )
+                            return (summaryExercise, pr)
+                        }
+                    }
+                    
+                    return (summaryExercise, nil)
+                }
+            }
+            
+            var summaries: [WorkoutSummary.Exercise] = []
+            for try await (exercise, pr) in group {
+                summaries.append(exercise)
+                if let pr = pr {
+                    personalRecords[pr.exerciseName] = pr
+                }
+            }
+            return summaries
+        }
         
         return WorkoutSummary(
             id: workout.id,

@@ -12,7 +12,7 @@ class WorkoutInteractionViewModel: ObservableObject {
         let likeRef = db.collection("workout_likes")
             .document("\(workoutId)_\(userId)")
         
-        let summaryRef = db.collection("workout_summaries")
+        let summaryRef = db.collection("workoutSummaries")
             .document(workoutId)
         
         if isLiked {
@@ -119,7 +119,7 @@ class WorkoutInteractionViewModel: ObservableObject {
                     ]
                 }
                 
-                try await db.collection("workout_summaries")
+                try await db.collection("workoutSummaries")
                     .document(workoutId)
                     .updateData(["personalRecords": prData])
                 
@@ -134,7 +134,7 @@ class WorkoutInteractionViewModel: ObservableObject {
     
     func loadWorkout(id: String) async {
         do {
-            let snapshot = try await db.collection("workout_summaries")
+            let snapshot = try await db.collection("workoutSummaries")
                 .document(id)
                 .getDocument()
             

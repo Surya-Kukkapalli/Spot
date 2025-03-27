@@ -10,6 +10,8 @@ struct ProfileView: View {
     @State private var showEditProfile = false
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var selectedMetric: ProfileViewModel.WorkoutMetric = .duration
+    @State private var showError = false
+    @State private var errorMessage = ""
     
     init(userId: String? = nil) {
         self.userId = userId
@@ -21,103 +23,142 @@ struct ProfileView: View {
     
     var body: some View {
         NavigationStack {
-            mainContent
-                .navigationTitle(navigationTitle)
-                .toolbar { toolbarContent }
-                .sheet(isPresented: $showEditProfile) {
-                    EditProfileView()
+            ScrollView {
+                if let displayUser = isCurrentUser ? authViewModel.currentUser : userViewModel.user {
+                    VStack(spacing: 20) {
+                        ProfileHeaderSection(
+                            user: displayUser,
+                            selectedPhotoItem: $selectedPhotoItem,
+                            onPhotoChange: handlePhotoChange,
+                            isCurrentUser: isCurrentUser
+                        )
+                        
+                        // Profile Stats with Navigation
+                        HStack(spacing: 40) {
+                            NavigationLink(destination: WorkoutHistoryView(userId: displayUser.id ?? "")) {
+                                VStack {
+                                    Text("\(displayUser.workoutsCompleted ?? 0)")
+                                        .font(.title2)
+                                        .bold()
+                                    Text("Workouts")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            
+                            NavigationLink(destination: FollowersView(userId: displayUser.id ?? "")) {
+                                VStack {
+                                    Text("\(displayUser.followers)")
+                                        .font(.title2)
+                                        .bold()
+                                    Text("Followers")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            
+                            NavigationLink(destination: FollowingView(userId: displayUser.id ?? "")) {
+                                VStack {
+                                    Text("\(displayUser.following)")
+                                        .font(.title2)
+                                        .bold()
+                                    Text("Following")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .padding(.vertical)
+                        
+                        WorkoutChartSection(
+                            viewModel: viewModel,
+                            selectedMetric: $selectedMetric
+                        )
+                        
+                        NavigationGridSection(userId: displayUser.id ?? "")
+                        
+                        if !viewModel.workoutSummaries.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Recent Workouts")
+                                    .font(.title3)
+                                    .bold()
+                                    .padding(.horizontal)
+                                
+                                ForEach(viewModel.workoutSummaries.prefix(3)) { workout in
+                                    NavigationLink(destination: WorkoutDetailView(workout: workout)) {
+                                        WorkoutSummaryCard(workout: workout)
+                                    }
+                                }
+                                
+                                NavigationLink(destination: WorkoutHistoryView(userId: displayUser.id ?? "")) {
+                                    Text("View All")
+                                        .font(.subheadline)
+                                        .foregroundColor(.blue)
+                                        .padding()
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.secondary.opacity(0.1))
+                                        .cornerRadius(10)
+                                }
+                                .padding(.horizontal)
+                            }
+                        }
+                    }
+                    .padding(.vertical)
+                } else {
+                    ProgressView("Loading profile...")
                 }
-                .alert("Sign Out", isPresented: $showSignOutAlert) {
-                    signOutAlert
-                }
-                .task { await loadData() }
-                .refreshable { await loadData() }
+            }
+            .navigationTitle(navigationTitle)
+            .toolbar { toolbarContent }
+            .sheet(isPresented: $showEditProfile) {
+                EditProfileView()
+            }
+            .alert("Sign Out", isPresented: $showSignOutAlert) {
+                signOutAlert
+            }
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage)
+            }
+            .task {
+                await loadData()
+            }
+            .refreshable {
+                await loadData()
+            }
         }
     }
     
-    private var mainContent: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                let displayUser = isCurrentUser ? authViewModel.currentUser : userViewModel.user
-                
-                ProfileHeaderSection(
-                    user: displayUser,
-                    selectedPhotoItem: $selectedPhotoItem,
-                    onPhotoChange: handlePhotoChange,
-                    isCurrentUser: isCurrentUser
-                )
-                
-                // Profile Stats with Navigation
-                HStack(spacing: 40) {
-                    NavigationLink(destination: WorkoutHistoryView(userId: displayUser?.id ?? "")) {
-                        VStack {
-                            Text("\(displayUser?.workoutsCompleted ?? 0)")
-                                .font(.title2)
-                                .bold()
-                            Text("Workouts")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    
-                    NavigationLink(destination: FollowersView(userId: displayUser?.id ?? "")) {
-                        VStack {
-                            Text("\(displayUser?.followers ?? 0)")
-                                .font(.title2)
-                                .bold()
-                            Text("Followers")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    
-                    NavigationLink(destination: FollowingView(userId: displayUser?.id ?? "")) {
-                        VStack {
-                            Text("\(displayUser?.following ?? 0)")
-                                .font(.title2)
-                                .bold()
-                            Text("Following")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-                .padding(.vertical)
-                
-                WorkoutChartSection(
-                    viewModel: viewModel,
-                    selectedMetric: $selectedMetric
-                )
-                
-                NavigationGridSection(userId: displayUser?.id ?? "")
-                
-                if !viewModel.workoutSummaries.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Recent Workouts")
-                            .font(.title3)
-                            .bold()
-                            .padding(.horizontal)
-                        
-                        ForEach(viewModel.workoutSummaries.prefix(3)) { workout in
-                            NavigationLink(destination: WorkoutDetailView(workout: workout)) {
-                                WorkoutSummaryCard(workout: workout)
-                            }
-                        }
-                        
-                        NavigationLink(destination: WorkoutHistoryView(userId: displayUser?.id ?? "")) {
-                            Text("View All")
-                                .font(.subheadline)
-                                .foregroundColor(.blue)
-                                .padding()
-                                .frame(maxWidth: .infinity)
-                                .background(Color.secondary.opacity(0.1))
-                                .cornerRadius(10)
-                        }
-                        .padding(.horizontal)
-                    }
-                }
+    private func loadData() async {
+        print("DEBUG: ProfileView.loadData() - Initial userId: '\(String(describing: userId))'")
+        print("DEBUG: ProfileView.loadData() - Current user ID: '\(String(describing: authViewModel.currentUser?.id))'")
+        print("DEBUG: ProfileView.loadData() - Is current user? \(isCurrentUser)")
+        
+        guard let targetUserId = userId ?? authViewModel.currentUser?.id,
+              !targetUserId.isEmpty else {
+            print("DEBUG: ProfileView.loadData() - Invalid user ID condition met")
+            print("DEBUG: ProfileView.loadData() - userId: '\(String(describing: userId))'")
+            print("DEBUG: ProfileView.loadData() - currentUser.id: '\(String(describing: authViewModel.currentUser?.id))'")
+            errorMessage = "Unable to load profile: Invalid user ID"
+            showError = true
+            return
+        }
+        
+        print("DEBUG: ProfileView.loadData() - Loading data for user ID: '\(targetUserId)'")
+        
+        do {
+            if !isCurrentUser {
+                print("DEBUG: ProfileView.loadData() - Fetching non-current user data")
+                await userViewModel.fetchUser(userId: targetUserId)
+            } else {
+                print("DEBUG: ProfileView.loadData() - Using current user data")
             }
-            .padding(.vertical)
+            await viewModel.fetchUserWorkouts(for: targetUserId)
+        } catch {
+            print("DEBUG: ProfileView.loadData() - Error: \(error)")
+            errorMessage = "Failed to load profile: \(error.localizedDescription)"
+            showError = true
         }
     }
     
@@ -151,14 +192,6 @@ struct ProfileView: View {
             Button("Sign Out", role: .destructive) {
                 try? authViewModel.signOut()
             }
-        }
-    }
-    
-    private func loadData() async {
-        let targetUserId = userId ?? authViewModel.currentUser?.id ?? ""
-        await viewModel.fetchUserWorkouts(for: targetUserId)
-        if !isCurrentUser {
-            await userViewModel.fetchUser(userId: targetUserId)
         }
     }
     
@@ -352,7 +385,7 @@ struct NavigationGridSection: View {
         }
         .padding()
     }
-} 
+}
 
 // MARK: - Workout History Section
 struct WorkoutHistorySection: View {

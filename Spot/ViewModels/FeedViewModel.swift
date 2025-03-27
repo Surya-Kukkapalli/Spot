@@ -151,17 +151,38 @@ class FeedViewModel: ObservableObject {
     private func createWorkoutSummary(from workout: Workout, user: User) -> WorkoutSummary {
         // Create exercise summaries
         let exerciseSummaries = workout.exercises.map { exercise -> WorkoutSummary.Exercise in
+            let sets = exercise.sets.map { set -> WorkoutSummary.Exercise.Set in
+                WorkoutSummary.Exercise.Set(
+                    weight: set.weight,
+                    reps: set.reps,
+                    isPR: set.isPR
+                )
+            }
+            
             return WorkoutSummary.Exercise(
                 exerciseName: exercise.name,
                 imageUrl: exercise.gifUrl,
                 targetMuscle: exercise.target ?? "Other",
-                sets: exercise.sets.map { set in
-                    WorkoutSummary.Exercise.Set(
-                        weight: set.weight,
-                        reps: set.reps
-                    )
-                }
+                sets: sets,
+                hasPR: sets.contains { $0.isPR }
             )
+        }
+        
+        // Create personal records dictionary from exercises with PRs
+        var personalRecords: [String: PersonalRecord] = [:]
+        for exercise in workout.exercises {
+            if let bestSet = exercise.sets.first(where: { $0.isPR }) {
+                personalRecords[exercise.name] = PersonalRecord(
+                    id: UUID().uuidString,
+                    exerciseName: exercise.name,
+                    weight: bestSet.weight,
+                    reps: bestSet.reps,
+                    oneRepMax: OneRepMax.calculate(weight: bestSet.weight, reps: bestSet.reps),
+                    date: workout.createdAt,
+                    workoutId: workout.id,
+                    userId: user.id ?? ""
+                )
+            }
         }
         
         return WorkoutSummary(
@@ -177,7 +198,7 @@ class FeedViewModel: ObservableObject {
             fistBumps: workout.likes ?? 0,
             comments: workout.comments ?? 0,
             exercises: exerciseSummaries,
-            personalRecords: [:] // We'll handle PRs separately if needed
+            personalRecords: personalRecords
         )
     }
     

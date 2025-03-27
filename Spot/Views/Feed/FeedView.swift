@@ -75,11 +75,9 @@ struct FeedView: View {
                 } else {
                     LazyVStack(spacing: 16) {
                         ForEach(viewModel.workoutSummaries) { workout in
-                            WorkoutSummaryCard(workout: workout)
-                                //.padding(.horizontal)
-                                .onTapGesture {
-                                    selectedWorkout = workout
-                                }
+                            NavigationLink(destination: WorkoutDetailView(workout: workout)) {
+                                WorkoutSummaryCard(workout: workout)
+                            }
                         }
                     }
                     .padding(.vertical)
@@ -91,9 +89,6 @@ struct FeedView: View {
             }
             .task {
                 await viewModel.fetchWorkoutSummaries()
-            }
-            .navigationDestination(item: $selectedWorkout) { workout in
-                WorkoutDetailView(workout: workout)
             }
         }
     }
