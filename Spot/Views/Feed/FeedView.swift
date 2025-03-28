@@ -41,6 +41,7 @@ import FirebaseAuth
 
 struct FeedView: View {
     @StateObject private var viewModel = FeedViewModel()
+    @StateObject private var userDiscoveryViewModel = UserDiscoveryViewModel()
     @EnvironmentObject private var authViewModel: AuthViewModel
     @State private var selectedWorkout: WorkoutSummary?
     
@@ -60,7 +61,7 @@ struct FeedView: View {
                             .font(.headline)
                             .foregroundColor(.secondary)
                         
-                        NavigationLink(destination: PublicWorkoutsView(userId: authViewModel.currentUser?.id ?? "")) {
+                        NavigationLink(destination: DiscoveryView()) {
                             Text("Discover Users")
                                 .font(.headline)
                                 .foregroundColor(.white)
@@ -74,7 +75,19 @@ struct FeedView: View {
                     .padding(.top, 40)
                 } else {
                     LazyVStack(spacing: 16) {
-                        ForEach(viewModel.workoutSummaries) { workout in
+                        // Show first workout summary
+                        if let firstWorkout = viewModel.workoutSummaries.first {
+                            NavigationLink(destination: WorkoutDetailView(workout: firstWorkout)) {
+                                WorkoutSummaryCard(workout: firstWorkout)
+                            }
+                            
+                            // Show suggested users section after first workout
+                            SuggestedUsersSection(viewModel: userDiscoveryViewModel)
+                                .padding(.vertical)
+                        }
+                        
+                        // Show remaining workouts
+                        ForEach(viewModel.workoutSummaries.dropFirst()) { workout in
                             NavigationLink(destination: WorkoutDetailView(workout: workout)) {
                                 WorkoutSummaryCard(workout: workout)
                             }
@@ -83,7 +96,22 @@ struct FeedView: View {
                     .padding(.vertical)
                 }
             }
-            .navigationTitle("Feed")
+            .navigationTitle("Home")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    HStack(spacing: 16) {
+                        NavigationLink(destination: DiscoveryView()) {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.primary)
+                        }
+                        
+                        NavigationLink(destination: NotificationView()) {
+                            Image(systemName: "bell")
+                                .foregroundColor(.primary)
+                        }
+                    }
+                }
+            }
             .refreshable {
                 await viewModel.fetchWorkoutSummaries()
             }
@@ -91,6 +119,13 @@ struct FeedView: View {
                 await viewModel.fetchWorkoutSummaries()
             }
         }
+    }
+}
+
+// Placeholder for NotificationView - will be implemented later
+struct NotificationView: View {
+    var body: some View {
+        Text("Notifications - Coming Soon")
     }
 }
 

@@ -12,7 +12,7 @@ struct MainTabView: View {
                 }
                 .tag(0)
             
-            DiscoveryView()
+            VisionView()
                 .tabItem {
                     Image(systemName: "eye")
                     Text("Vision")
