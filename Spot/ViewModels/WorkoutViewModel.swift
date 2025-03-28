@@ -46,6 +46,26 @@ class WorkoutViewModel: ObservableObject {
         print("DEBUG: isWorkoutInProgress set to: \(isWorkoutInProgress)")
     }
     
+    func updateActiveWorkout(name: String, notes: String?) {
+        guard var workout = activeWorkout else {
+            print("DEBUG: Cannot update workout - no active workout")
+            return
+        }
+        
+        print("DEBUG: Updating active workout")
+        print("DEBUG: - Old name: '\(workout.name)'")
+        print("DEBUG: - New name: '\(name)'")
+        print("DEBUG: - Old notes: '\(workout.notes ?? "none")'")
+        print("DEBUG: - New notes: '\(notes ?? "none")'")
+        
+        workout.name = name
+        workout.notes = notes
+        workout.exercises = exercises // Ensure exercises are up to date
+        activeWorkout = workout
+        
+        print("DEBUG: Active workout updated successfully")
+    }
+    
     func addExercise(_ exercise: Exercise) {
         print("DEBUG: Adding exercise to workout: \(exercise.name)")
         print("DEBUG: Current exercises count: \(exercises.count)")
@@ -124,7 +144,10 @@ class WorkoutViewModel: ObservableObject {
     }
     
     func finishWorkout() async throws {
-        guard var workout = activeWorkout else { return }
+        guard var workout = activeWorkout else {
+            print("DEBUG: No active workout to finish")
+            return
+        }
         
         // First, update the workout object with current state
         workout.exercises = exercises
@@ -132,6 +155,8 @@ class WorkoutViewModel: ObservableObject {
         workout.createdAt = workoutStartTime ?? Date()
         
         print("DEBUG: Finishing workout with \(exercises.count) exercises")
+        print("DEBUG: Workout name: '\(workout.name)'")
+        print("DEBUG: Workout notes: '\(workout.notes ?? "none")'")
         print("DEBUG: Exercise details:")
         for exercise in exercises {
             print("- \(exercise.name): \(exercise.sets.count) sets")
@@ -140,129 +165,166 @@ class WorkoutViewModel: ObservableObject {
             }
         }
         
-        // Save the workout
+        // Get current user
+        guard let currentUser = Auth.auth().currentUser else {
+            print("DEBUG: No current user found")
+            throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "No current user found"])
+        }
+        print("DEBUG: Current user ID: \(currentUser.uid)")
+        
+        // Get user data
+        let userDoc = try await db.collection("users").document(currentUser.uid).getDocument()
+        let user = try userDoc.data(as: User.self)
+        print("DEBUG: Retrieved user data for: \(user.username)")
+        
+        // Update workout with user info before saving
+        workout.userId = currentUser.uid  // Ensure workout has correct user ID
+        
+        // Ensure workout name and notes are preserved
+        if workout.name.isEmpty {
+            print("DEBUG: Warning: Workout name is empty, this shouldn't happen")
+        }
+        
+        // Save the workout first with complete data
         let encodedWorkout = try Firestore.Encoder().encode(workout)
         try await db.collection("workouts").document(workout.id).setData(encodedWorkout)
         print("DEBUG: Saved workout to workouts collection")
+        print("DEBUG: - Name: '\(workout.name)'")
+        print("DEBUG: - Notes: '\(workout.notes ?? "none")'")
         
-        // Create and save workout summary
-        if let currentUser = Auth.auth().currentUser {
-            let userDoc = try await db.collection("users").document(currentUser.uid).getDocument()
-            let user = try userDoc.data(as: User.self)
-            
-            // Create exercise summaries and check for PRs
-            let prService = PersonalRecordService()
-            var personalRecords: [String: PersonalRecord] = [:]
-            
-            let exerciseSummaries = try await withThrowingTaskGroup(of: (WorkoutSummary.Exercise, PersonalRecord?).self) { group in
-                for exercise in exercises {
-                    group.addTask {
-                        let sets = exercise.sets.map { set -> WorkoutSummary.Exercise.Set in
-                            return WorkoutSummary.Exercise.Set(
-                                weight: set.weight,
-                                reps: set.reps,
-                                isPR: false  // Will be updated if it's a PR
-                            )
-                        }
-                        
-                        var summaryExercise = WorkoutSummary.Exercise(
-                            exerciseName: exercise.name,
-                            imageUrl: exercise.gifUrl,
-                            targetMuscle: exercise.target ?? "Other",
-                            sets: sets,
-                            hasPR: false
+        // Create exercise summaries and check for PRs
+        let prService = PersonalRecordService()
+        var personalRecords: [String: PersonalRecord] = [:]
+        
+        print("DEBUG: Processing exercises for PRs...")
+        let exerciseSummaries = try await withThrowingTaskGroup(of: (WorkoutSummary.Exercise, PersonalRecord?).self) { group in
+            for exercise in exercises {
+                group.addTask {
+                    print("DEBUG: Processing exercise: \(exercise.name)")
+                    let sets = exercise.sets.map { set -> WorkoutSummary.Exercise.Set in
+                        WorkoutSummary.Exercise.Set(
+                            weight: set.weight,
+                            reps: set.reps,
+                            isPR: false  // Will be updated if it's a PR
+                        )
+                    }
+                    
+                    var summaryExercise = WorkoutSummary.Exercise(
+                        exerciseName: exercise.name,
+                        imageUrl: exercise.gifUrl,
+                        targetMuscle: exercise.target ?? "Other",
+                        sets: sets,
+                        hasPR: false
+                    )
+                    
+                    // Check if any set is a PR
+                    if let bestSet = exercise.sets.max(by: { $0.volume < $1.volume }) {
+                        print("DEBUG: Best set found - Weight: \(bestSet.weight), Reps: \(bestSet.reps)")
+                        let isPR = try await prService.checkAndUpdatePR(
+                            userId: currentUser.uid,  // Use currentUser.uid directly instead of user.id
+                            exercise: summaryExercise,
+                            workoutId: workout.id
                         )
                         
-                        // Check if any set is a PR
-                        if let bestSet = exercise.sets.max(by: { $0.volume < $1.volume }) {
-                            let isPR = try await prService.checkAndUpdatePR(
-                                userId: user.id ?? "",
-                                exercise: summaryExercise,
-                                workoutId: workout.id
-                            )
-                            
-                            if isPR {
-                                // Update the set that was a PR
-                                if let prSetIndex = summaryExercise.sets.firstIndex(where: { 
-                                    $0.weight == bestSet.weight && $0.reps == bestSet.reps 
-                                }) {
-                                    summaryExercise.sets[prSetIndex].isPR = true
-                                }
-                                summaryExercise.hasPR = true
-                                
-                                // Create PR record
-                                let pr = PersonalRecord(
-                                    id: UUID().uuidString,
-                                    exerciseName: exercise.name,
-                                    weight: bestSet.weight,
-                                    reps: bestSet.reps,
-                                    oneRepMax: OneRepMax.calculate(weight: bestSet.weight, reps: bestSet.reps),
-                                    date: workout.createdAt,
-                                    workoutId: workout.id,
-                                    userId: user.id ?? ""
-                                )
-                                return (summaryExercise, pr)
+                        if isPR {
+                            print("DEBUG: PR detected for \(exercise.name)")
+                            // Update the set that was a PR
+                            if let prSetIndex = summaryExercise.sets.firstIndex(where: { 
+                                $0.weight == bestSet.weight && $0.reps == bestSet.reps 
+                            }) {
+                                summaryExercise.sets[prSetIndex].isPR = true
                             }
+                            summaryExercise.hasPR = true
+                            
+                            // Create PR record
+                            let pr = PersonalRecord(
+                                id: UUID().uuidString,
+                                exerciseName: exercise.name,
+                                weight: bestSet.weight,
+                                reps: bestSet.reps,
+                                oneRepMax: OneRepMax.calculate(weight: bestSet.weight, reps: bestSet.reps),
+                                date: workout.createdAt,
+                                workoutId: workout.id,
+                                userId: currentUser.uid  // Use currentUser.uid consistently
+                            )
+                            return (summaryExercise, pr)
                         }
-                        
-                        return (summaryExercise, nil)
                     }
+                    
+                    return (summaryExercise, nil)
                 }
-                
-                var summaries: [WorkoutSummary.Exercise] = []
-                for try await (exercise, pr) in group {
-                    summaries.append(exercise)
-                    if let pr = pr {
-                        personalRecords[pr.exerciseName] = pr
-                    }
-                }
-                return summaries
             }
             
-            // Create workout summary
-            let summary = WorkoutSummary(
-                id: workout.id,
-                userId: user.id ?? "",
-                username: user.username,
-                userProfileImageUrl: user.profileImageUrl,
-                workoutTitle: workout.name,
-                workoutNotes: workout.notes,
-                createdAt: workout.createdAt,
-                duration: Int(workout.duration / 60), // Convert seconds to minutes
-                totalVolume: calculateVolume(),
-                fistBumps: workout.likes,
-                comments: workout.comments,
-                exercises: exerciseSummaries,
-                personalRecords: personalRecords
-            )
-            
-            print("DEBUG: Final workout summary:")
-            print("DEBUG: Title: \(summary.workoutTitle)")
-            print("DEBUG: Number of exercises: \(summary.exercises.count)")
-            print("DEBUG: Created at: \(summary.createdAt)")
-            
-            // Save the workout summary
-            let encodedSummary = try Firestore.Encoder().encode(summary)
-            try await db.collection("workoutSummaries")
-                .document(workout.id)
-                .setData(encodedSummary)
-            print("DEBUG: Saved workout summary to workoutSummaries collection")
-            
-            // Update user's workout stats
-            var userData: [String: Any] = [:]
-            userData["workoutsCompleted"] = FieldValue.increment(Int64(1))
-            userData["totalWorkoutDuration"] = FieldValue.increment(Int64(workout.duration))
-            
-            if let currentWorkouts = user.workoutsCompleted {
-                let newAverage = ((user.totalWorkoutDuration ?? 0) + workout.duration) / Double(currentWorkouts + 1)
-                userData["averageWorkoutDuration"] = newAverage
+            var summaries: [WorkoutSummary.Exercise] = []
+            for try await (exercise, pr) in group {
+                summaries.append(exercise)
+                if let pr = pr {
+                    print("DEBUG: Adding PR for \(pr.exerciseName) to summary")
+                    personalRecords[pr.exerciseName] = pr
+                }
             }
-            
-            try await db.collection("users")
-                .document(currentUser.uid)
-                .updateData(userData)
-            print("DEBUG: Updated user workout stats")
+            return summaries
         }
+        
+        // Create workout summary with the correct name and notes from the workout
+        let summary = WorkoutSummary(
+            id: workout.id,
+            userId: currentUser.uid,  // Use currentUser.uid consistently
+            username: user.username,
+            userProfileImageUrl: user.profileImageUrl,
+            workoutTitle: workout.name,  // Use the workout's name
+            workoutNotes: workout.notes,  // Use the workout's notes
+            createdAt: workout.createdAt,
+            duration: Int(workout.duration / 60),
+            totalVolume: calculateVolume(),
+            fistBumps: workout.likes,
+            comments: workout.comments,
+            exercises: exerciseSummaries,
+            personalRecords: personalRecords
+        )
+        
+        print("DEBUG: Final workout summary:")
+        print("DEBUG: Title: '\(summary.workoutTitle)'")
+        print("DEBUG: Notes: '\(summary.workoutNotes ?? "none")'")
+        print("DEBUG: Number of exercises: \(summary.exercises.count)")
+        print("DEBUG: Created at: \(summary.createdAt)")
+        print("DEBUG: Personal Records: \(personalRecords.count)")
+        
+        // Save the workout summary
+        let encodedSummary = try Firestore.Encoder().encode(summary)
+        try await db.collection("workoutSummaries")
+            .document(workout.id)
+            .setData(encodedSummary)
+        print("DEBUG: Saved workout summary to workoutSummaries collection")
+        
+        // Notify PR service to refresh caches if needed
+        if !personalRecords.isEmpty {
+            print("DEBUG: New PRs detected, refreshing PR caches...")
+            for pr in personalRecords.values {
+                // Update PR in personal_records collection
+                try await db.collection("users")
+                    .document(currentUser.uid)
+                    .collection("personal_records")
+                    .document(pr.exerciseName)
+                    .setData(try Firestore.Encoder().encode(pr))
+            }
+            print("DEBUG: PR caches updated")
+        }
+        
+        // Update user's workout stats
+        var userData: [String: Any] = [:]
+        userData["workoutsCompleted"] = FieldValue.increment(Int64(1))
+        userData["totalWorkoutDuration"] = FieldValue.increment(Int64(workout.duration))
+        
+        if let currentWorkouts = user.workoutsCompleted {
+            let newAverage = ((user.totalWorkoutDuration ?? 0) + workout.duration) / Double(currentWorkouts + 1)
+            userData["averageWorkoutDuration"] = newAverage
+        }
+        
+        try await db.collection("users")
+            .document(currentUser.uid)
+            .updateData(userData)
+        print("DEBUG: Updated user workout stats")
         
         // Reset the workout state
         await MainActor.run {
@@ -271,6 +333,7 @@ class WorkoutViewModel: ObservableObject {
             self.isWorkoutInProgress = false
             self.workoutStartTime = nil
         }
+        print("DEBUG: Workout state reset")
     }
     
     func discardWorkout() async {

@@ -13,6 +13,15 @@ struct SaveWorkoutView: View {
     @State private var saveAsTemplate = false
     @State private var makeTemplatePublic = false
     
+    init(viewModel: WorkoutViewModel) {
+        self.viewModel = viewModel
+        // Initialize title and description with existing values if available
+        if let workout = viewModel.activeWorkout {
+            _workoutTitle = State(initialValue: workout.name)
+            _description = State(initialValue: workout.notes ?? "")
+        }
+    }
+    
     var body: some View {
         NavigationStack {
             Form {
@@ -70,25 +79,21 @@ struct SaveWorkoutView: View {
                     showingDiscardAlert = true
                 },
                 trailing: Button("Save") {
-                    Task {
-                        if let workout = viewModel.activeWorkout {
-                            var workoutToSave = workout
-                            workoutToSave.name = workoutTitle
-                            workoutToSave.notes = description.isEmpty ? nil : description
-                            workoutToSave.exercises = viewModel.exercises // Use the exercises from viewModel
-                            
-                            try? await viewModel.finishWorkout()
-                            
+                    print("DEBUG: Save button pressed")
+                    print("DEBUG: Title: '\(workoutTitle)'")
+                    print("DEBUG: Notes: '\(description)'")
+                    
+                    viewModel.updateActiveWorkout(name: workoutTitle, notes: description)
+                    
+                    if let workout = viewModel.activeWorkout {
+                        Task {
                             if saveAsTemplate {
-                                try? await programViewModel.createTemplate(
-                                    from: workoutToSave,
-                                    description: description.isEmpty ? nil : description,
-                                    isPublic: makeTemplatePublic
-                                )
-                                await programViewModel.fetchUserTemplates() // Refresh templates
+                                try? await programViewModel.createTemplate(from: workout, description: description, isPublic: makeTemplatePublic)
                             }
-                            
-                            dismiss()
+                            try? await viewModel.finishWorkout()
+                            await MainActor.run {
+                                dismiss()
+                            }
                         }
                     }
                 }

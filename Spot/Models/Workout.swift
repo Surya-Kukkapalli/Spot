@@ -3,7 +3,7 @@ import FirebaseFirestore
 
 struct Workout: Identifiable, Codable {
     var id: String
-    let userId: String
+    var userId: String
     var name: String
     var exercises: [Exercise]
     var duration: TimeInterval
