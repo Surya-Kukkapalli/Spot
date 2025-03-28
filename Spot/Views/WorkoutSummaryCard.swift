@@ -23,19 +23,12 @@ struct WorkoutSummaryCard: View {
             // User header
             HStack {
                 NavigationLink(destination: {
-                    print("DEBUG: Current user ID: '\(authViewModel.currentUser?.id ?? "nil")'")
-                    print("DEBUG: Workout user ID: '\(workout.userId)'")
-                    let targetUserId: String? = {
-                        guard let currentUserId = authViewModel.currentUser?.id,
-                              !currentUserId.isEmpty,
-                              !workout.userId.isEmpty,
-                              currentUserId == workout.userId else {
-                            return workout.userId.isEmpty ? nil : workout.userId
-                        }
-                        return nil
-                    }()
-                    print("DEBUG: Final target user ID: '\(String(describing: targetUserId))'")
-                    return ProfileView(userId: targetUserId)
+                    if let currentUserId = authViewModel.currentUser?.id,
+                       currentUserId == workout.userId {
+                        ProfileView()
+                    } else {
+                        OtherUserProfileView(userId: workout.userId)
+                    }
                 }) {
                     AsyncImage(url: URL(string: workout.userProfileImageUrl ?? "")) { image in
                         image.resizable().scaledToFill()
@@ -48,19 +41,12 @@ struct WorkoutSummaryCard: View {
                 
                 VStack(alignment: .leading, spacing: 2) {
                     NavigationLink(destination: {
-                        print("DEBUG: Current user ID: '\(authViewModel.currentUser?.id ?? "nil")'")
-                        print("DEBUG: Workout user ID: '\(workout.userId)'")
-                        let targetUserId: String? = {
-                            guard let currentUserId = authViewModel.currentUser?.id,
-                                  !currentUserId.isEmpty,
-                                  !workout.userId.isEmpty,
-                                  currentUserId == workout.userId else {
-                                return workout.userId.isEmpty ? nil : workout.userId
-                            }
-                            return nil
-                        }()
-                        print("DEBUG: Final target user ID: '\(String(describing: targetUserId))'")
-                        return ProfileView(userId: targetUserId)
+                        if let currentUserId = authViewModel.currentUser?.id,
+                           currentUserId == workout.userId {
+                            ProfileView()
+                        } else {
+                            OtherUserProfileView(userId: workout.userId)
+                        }
                     }) {
                         Text(workout.username)
                             .font(.headline)

@@ -66,7 +66,7 @@ struct FollowersView: View {
             } else {
                 LazyVStack(spacing: 16) {
                     ForEach(viewModel.followers) { user in
-                        NavigationLink(destination: ProfileView(userId: user.id ?? "")) {
+                        NavigationLink(destination: OtherUserProfileView(userId: user.id ?? "")) {
                             UserListItem(user: user)
                         }
                     }

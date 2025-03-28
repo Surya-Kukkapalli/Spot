@@ -10,8 +10,10 @@ class FollowingViewModel: ObservableObject {
     private let db = Firestore.firestore()
     
     func fetchFollowing(for userId: String) async {
+        print("DEBUG: Fetching following for user ID: '\(userId)'")
         guard !userId.isEmpty else {
             error = "Invalid user ID"
+            print("DEBUG: Empty user ID in fetchFollowing")
             return
         }
         
@@ -19,23 +21,38 @@ class FollowingViewModel: ObservableObject {
         
         do {
             let userDoc = try await db.collection("users").document(userId).getDocument()
+            print("DEBUG: User document exists: \(userDoc.exists)")
+            
             guard let user = try? userDoc.data(as: User.self),
                   !user.followingIds.isEmpty else {
+                print("DEBUG: No following IDs found")
                 followedUsers = []
                 isLoading = false
                 return
             }
             
+            print("DEBUG: Found \(user.followingIds.count) following IDs")
+            
             let followedUsersSnapshot = try await db.collection("users")
                 .whereField(FieldPath.documentID(), in: user.followingIds)
                 .getDocuments()
             
-            followedUsers = followedUsersSnapshot.documents.compactMap { document in
-                try? document.data(as: User.self)
+            followedUsers = followedUsersSnapshot.documents.compactMap { document -> User? in
+                do {
+                    var user = try document.data(as: User.self)
+                    user.id = document.documentID // Ensure ID is set
+                    print("DEBUG: Successfully decoded followed user: \(user.username) with ID: \(user.id ?? "nil")")
+                    return user
+                } catch {
+                    print("DEBUG: Error decoding followed user document: \(error)")
+                    return nil
+                }
             }
+            
+            print("DEBUG: Successfully loaded \(followedUsers.count) followed users")
         } catch {
             self.error = error.localizedDescription
-            print("Error fetching followed users: \(error)")
+            print("DEBUG: Error fetching followed users: \(error)")
         }
         
         isLoading = false
@@ -66,8 +83,10 @@ struct FollowingView: View {
             } else {
                 LazyVStack(spacing: 16) {
                     ForEach(viewModel.followedUsers) { user in
-                        NavigationLink(destination: ProfileView(userId: user.id ?? "")) {
-                            UserListItem(user: user)
+                        if let userId = user.id {
+                            NavigationLink(destination: OtherUserProfileView(userId: userId)) {
+                                UserListItem(user: user)
+                            }
                         }
                     }
                 }

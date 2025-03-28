@@ -4,6 +4,7 @@ import FirebaseFirestore
 import FirebaseStorage
 import FirebaseAuth
 import UIKit
+import Combine
 
 @MainActor
 class ProfileViewModel: ObservableObject {
@@ -12,9 +13,11 @@ class ProfileViewModel: ObservableObject {
     @Published var selectedMetric: WorkoutMetric = .duration
     @Published var isLoading = false
     @Published var selectedTimeRange = TimeRange.month
+    @Published var error: String?
     
     private let db = Firestore.firestore()
     private let storage = Storage.storage()
+    private var cancellables: Set<AnyCancellable> = []
     
     enum TimeRange: String, CaseIterable {
         case week = "Week"
@@ -27,6 +30,20 @@ class ProfileViewModel: ObservableObject {
         case duration = "Duration"
         case volume = "Volume"
         case reps = "Reps"
+    }
+    
+    init() {
+        setupNotificationObserver()
+    }
+    
+    private func setupNotificationObserver() {
+        NotificationCenter.default.publisher(for: .userFollowStatusChanged)
+            .sink { [weak self] _ in
+                Task {
+                    await self?.fetchUserData()
+                }
+            }
+            .store(in: &cancellables)
     }
     
     func fetchUserWorkouts(for userId: String) async {
@@ -228,5 +245,9 @@ class ProfileViewModel: ObservableObject {
             
             return (date: workout.createdAt, value: value)
         }
+    }
+    
+    private func fetchUserData() async {
+        // Implement the logic to fetch user data
     }
 } 

@@ -4,8 +4,15 @@ import FirebaseAuth
 
 struct OtherUserProfileView: View {
     let userId: String
-    @StateObject private var viewModel = OtherUserProfileViewModel()
+    @StateObject private var viewModel: OtherUserProfileViewModel
     @State private var selectedTab = 0
+    @Environment(\.dismiss) private var dismiss
+    
+    init(userId: String) {
+        print("DEBUG: Initializing OtherUserProfileView with userId: '\(userId)'")
+        self.userId = userId
+        _viewModel = StateObject(wrappedValue: OtherUserProfileViewModel())
+    }
     
     var body: some View {
         ScrollView {
@@ -165,6 +172,12 @@ struct OtherUserProfileView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            print("DEBUG: Starting to fetch data for userId: '\(userId)'")
+            if userId.isEmpty {
+                print("DEBUG: Empty user ID detected, dismissing view")
+                dismiss()
+                return
+            }
             await viewModel.fetchUserData(userId: userId)
             await viewModel.fetchWorkouts(userId: userId)
         }
@@ -182,25 +195,44 @@ class OtherUserProfileViewModel: ObservableObject {
     private let db = Firestore.firestore()
     
     func fetchUserData(userId: String) async {
+        print("DEBUG: Fetching user data for ID: '\(userId)'")
+        guard !userId.isEmpty else {
+            print("DEBUG: Empty user ID in fetchUserData")
+            return
+        }
+        
         do {
             let userDoc = try await db.collection("users").document(userId).getDocument()
-            let user = try userDoc.data(as: User.self)
+            print("DEBUG: User document exists: \(userDoc.exists)")
+            
+            var user = try userDoc.data(as: User.self)
+            user.id = userId  // Ensure the user ID is set from the document ID
+            print("DEBUG: Successfully decoded user: \(user.username) with ID: \(userId)")
             
             // Check if current user is following this user
             if let currentUserId = Auth.auth().currentUser?.uid {
                 let currentUserDoc = try await db.collection("users").document(currentUserId).getDocument()
                 let currentUser = try currentUserDoc.data(as: User.self)
                 isFollowing = currentUser.followingIds.contains(userId)
+                print("DEBUG: Current user following status: \(isFollowing)")
             }
             
-            self.user = user
+            await MainActor.run {
+                self.user = user
+            }
             await calculateProgress(for: user)
         } catch {
-            print("Error fetching user data: \(error)")
+            print("DEBUG: Error fetching user data: \(error)")
         }
     }
     
     func fetchWorkouts(userId: String) async {
+        print("DEBUG: Fetching workouts for user ID: '\(userId)'")
+        guard !userId.isEmpty else {
+            print("DEBUG: Empty user ID in fetchWorkouts")
+            return
+        }
+        
         do {
             let snapshot = try await db.collection("workoutSummaries")
                 .whereField("userId", isEqualTo: userId)
@@ -208,15 +240,24 @@ class OtherUserProfileViewModel: ObservableObject {
                 .limit(to: 10)
                 .getDocuments()
             
-            self.workoutSummaries = snapshot.documents.compactMap { try? $0.data(as: WorkoutSummary.self) }
+            print("DEBUG: Found \(snapshot.documents.count) workouts")
+            
+            await MainActor.run {
+                self.workoutSummaries = snapshot.documents.compactMap { try? $0.data(as: WorkoutSummary.self) }
+            }
         } catch {
-            print("Error fetching workouts: \(error)")
+            print("DEBUG: Error fetching workouts: \(error)")
         }
     }
     
     func toggleFollow() async {
         guard let userId = user?.id,
-              let currentUserId = Auth.auth().currentUser?.uid else { return }
+              let currentUserId = Auth.auth().currentUser?.uid else {
+            print("DEBUG: Missing user ID or current user ID for toggle follow")
+            return
+        }
+        
+        print("DEBUG: Toggling follow for user \(userId), current status: \(isFollowing)")
         
         do {
             if isFollowing {
@@ -230,6 +271,8 @@ class OtherUserProfileViewModel: ObservableObject {
                     "followerIds": FieldValue.arrayRemove([currentUserId]),
                     "followers": FieldValue.increment(Int64(-1))
                 ])
+                
+                print("DEBUG: Successfully unfollowed user")
             } else {
                 // Follow
                 try await db.collection("users").document(currentUserId).updateData([
@@ -241,6 +284,8 @@ class OtherUserProfileViewModel: ObservableObject {
                     "followerIds": FieldValue.arrayUnion([currentUserId]),
                     "followers": FieldValue.increment(Int64(1))
                 ])
+                
+                print("DEBUG: Successfully followed user")
             }
             
             isFollowing.toggle()
@@ -248,8 +293,11 @@ class OtherUserProfileViewModel: ObservableObject {
                 user.followers += isFollowing ? 1 : -1
                 self.user = user
             }
+            
+            // Post notification for profile update
+            NotificationCenter.default.post(name: .userFollowStatusChanged, object: nil)
         } catch {
-            print("Error toggling follow: \(error)")
+            print("DEBUG: Error toggling follow: \(error)")
         }
     }
     

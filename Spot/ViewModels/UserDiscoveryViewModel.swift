@@ -3,6 +3,11 @@ import Firebase
 import FirebaseFirestore
 import FirebaseAuth
 
+// Add notification name
+extension Notification.Name {
+    static let userFollowStatusChanged = Notification.Name("userFollowStatusChanged")
+}
+
 @MainActor
 class UserDiscoveryViewModel: ObservableObject {
     @Published var suggestedUsers: [User] = []
@@ -172,6 +177,9 @@ class UserDiscoveryViewModel: ObservableObject {
             await MainActor.run {
                 suggestedUsers.removeAll { $0.id == userId }
                 searchResults.removeAll { $0.id == userId }
+                
+                // Post notification for profile update
+                NotificationCenter.default.post(name: .userFollowStatusChanged, object: nil)
             }
         } catch {
             print("DEBUG: Error following user: \(error)")
