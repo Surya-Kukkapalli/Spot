@@ -5,7 +5,7 @@ import FirebaseAuth
 struct OtherUserProfileView: View {
     let userId: String
     @StateObject private var viewModel: OtherUserProfileViewModel
-    @State private var selectedTab = 0
+    @State private var selectedMetric: ProfileViewModel.WorkoutMetric = .duration
     @Environment(\.dismiss) private var dismiss
     
     init(userId: String) {
@@ -21,24 +21,17 @@ struct OtherUserProfileView: View {
                 if let user = viewModel.user {
                     VStack(spacing: 16) {
                         // Profile Image
-                        if let imageUrl = user.profileImageUrl {
-                            AsyncImage(url: URL(string: imageUrl)) { image in
-                                image
-                                    .resizable()
-                                    .scaledToFill()
-                            } placeholder: {
-                                Image(systemName: "person.circle.fill")
-                                    .resizable()
-                                    .foregroundColor(.gray)
-                            }
-                            .frame(width: 100, height: 100)
-                            .clipShape(Circle())
-                        } else {
+                        AsyncImage(url: URL(string: user.profileImageUrl ?? "")) { image in
+                            image
+                                .resizable()
+                                .scaledToFill()
+                        } placeholder: {
                             Image(systemName: "person.circle.fill")
                                 .resizable()
-                                .frame(width: 100, height: 100)
                                 .foregroundColor(.gray)
                         }
+                        .frame(width: 100, height: 100)
+                        .clipShape(Circle())
                         
                         // Username and Bio
                         VStack(spacing: 8) {
@@ -54,32 +47,42 @@ struct OtherUserProfileView: View {
                             }
                         }
                         
-                        // Stats Row
+                        // Stats Row with Navigation
                         HStack(spacing: 40) {
-                            VStack {
-                                Text("\(viewModel.workoutSummaries.count)")
-                                    .font(.headline)
-                                Text("Workouts")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
+                            NavigationLink(destination: WorkoutHistoryView(userId: user.id ?? "")) {
+                                VStack {
+                                    Text("\(viewModel.workoutSummaries.count)")
+                                        .font(.title2)
+                                        .bold()
+                                    Text("Workouts")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                             
-                            VStack {
-                                Text("\(user.followers)")
-                                    .font(.headline)
-                                Text("Followers")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
+                            NavigationLink(destination: FollowersView(userId: user.id ?? "")) {
+                                VStack {
+                                    Text("\(user.followers)")
+                                        .font(.title2)
+                                        .bold()
+                                    Text("Followers")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                             
-                            VStack {
-                                Text("\(user.following)")
-                                    .font(.headline)
-                                Text("Following")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
+                            NavigationLink(destination: FollowingView(userId: user.id ?? "")) {
+                                VStack {
+                                    Text("\(user.following)")
+                                        .font(.title2)
+                                        .bold()
+                                    Text("Following")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
+                        .padding(.vertical)
                         
                         // Follow Button
                         Button(action: {
@@ -99,54 +102,94 @@ struct OtherUserProfileView: View {
                 }
                 
                 // Progress Section
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Progress")
-                        .font(.headline)
-                        .padding(.horizontal)
-                    
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 16) {
-                            ForEach(viewModel.progressItems) { item in
-                                ProgressCard(item: item)
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
-                }
+//                VStack(alignment: .leading, spacing: 8) {
+//                    Text("Progress")
+//                        .font(.title3)
+//                        .bold()
+//                        .padding(.horizontal)
+//                    
+//                    Picker("Metric", selection: $selectedMetric) {
+//                        ForEach(ProfileViewModel.WorkoutMetric.allCases, id: \.self) { metric in
+//                            Text(metric.rawValue).tag(metric)
+//                        }
+//                    }
+//                    .pickerStyle(.segmented)
+//                    .padding(.horizontal)
+//                    
+//                    WorkoutChartView(
+//                        data: viewModel.getChartData(),
+//                        selectedMetric: $selectedMetric
+//                    )
+//                    .padding(.top, 8)
+//                }
                 
-                // Tabs
-                HStack {
-                    Button(action: { selectedTab = 0 }) {
-                        VStack(spacing: 8) {
+                // Navigation Grid
+                LazyVGrid(columns: [
+                    GridItem(.flexible()),
+                    GridItem(.flexible())
+                ], spacing: 20) {
+                    NavigationLink {
+                        TrophyCaseView(userId: userId)
+                    } label: {
+                        VStack {
+                            Image(systemName: "trophy.fill")
+                                .font(.title)
+                                .foregroundColor(.yellow)
+                            Text("Trophy Case")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(10)
+                    }
+                    
+                    NavigationLink(destination: Text("Exercises")) {
+                        VStack {
+                            Image(systemName: "dumbbell.fill")
+                                .font(.title)
+                            Text("Exercises")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(10)
+                    }
+                    
+                    NavigationLink {
+                        PublicWorkoutsView(userId: userId)
+                    } label: {
+                        VStack {
+                            Image(systemName: "figure.run")
+                                .font(.title)
                             Text("Workouts")
-                                .foregroundColor(selectedTab == 0 ? .primary : .secondary)
-                            
-                            Rectangle()
-                                .fill(selectedTab == 0 ? Color.blue : Color.clear)
-                                .frame(height: 2)
                         }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(10)
                     }
-                    .frame(maxWidth: .infinity)
                     
-                    Button(action: { selectedTab = 1 }) {
-                        VStack(spacing: 8) {
+                    NavigationLink {
+                        PublicProgramsView(userId: userId)
+                    } label: {
+                        VStack {
+                            Image(systemName: "list.bullet.clipboard")
+                                .font(.title)
                             Text("Programs")
-                                .foregroundColor(selectedTab == 1 ? .primary : .secondary)
-                            
-                            Rectangle()
-                                .fill(selectedTab == 1 ? Color.blue : Color.clear)
-                                .frame(height: 2)
                         }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.secondary.opacity(0.1))
+                        .cornerRadius(10)
                     }
-                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal)
+                .padding()
                 
-                // Compare Button
+                // Compete Button
                 Button(action: {
-                    // Compare functionality will be implemented later
+                    // Compete functionality will be implemented later
                 }) {
-                    Text("Compare")
+                    Text("Compete")
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
@@ -157,15 +200,29 @@ struct OtherUserProfileView: View {
                 }
                 
                 // Recent Workouts
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Recent Workouts")
-                        .font(.headline)
-                        .padding(.horizontal)
-                    
-                    ForEach(viewModel.workoutSummaries) { workout in
-                        NavigationLink(destination: WorkoutDetailView(workout: workout)) {
-                            WorkoutSummaryCard(workout: workout)
+                if !viewModel.workoutSummaries.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Recent Workouts")
+                            .font(.title3)
+                            .bold()
+                            .padding(.horizontal)
+                        
+                        ForEach(viewModel.workoutSummaries.prefix(3)) { workout in
+                            NavigationLink(destination: WorkoutDetailView(workout: workout)) {
+                                WorkoutSummaryCard(workout: workout)
+                            }
                         }
+                        
+                        NavigationLink(destination: WorkoutHistoryView(userId: userId)) {
+                            Text("View All")
+                                .font(.subheadline)
+                                .foregroundColor(.blue)
+                                .padding()
+                                .frame(maxWidth: .infinity)
+                                .background(Color.secondary.opacity(0.1))
+                                .cornerRadius(10)
+                        }
+                        .padding(.horizontal)
                     }
                 }
             }
@@ -301,9 +358,20 @@ class OtherUserProfileViewModel: ObservableObject {
         }
     }
     
+//    func getChartData() -> [WorkoutDataPoint] {
+//        // Convert workoutSummaries to chart data points
+//        return workoutSummaries.map { summary in
+//            WorkoutDataPoint(
+//                date: summary.createdAt ?? Date(),
+//                duration: TimeInterval(summary.duration),
+//                volume: Double(summary.totalVolume),
+//                reps: Double(summary.totalReps)
+//            )
+//        }
+//    }
+    
     private func calculateProgress(for user: User) async {
         // Calculate progress items based on user's workout data
-        // This is a placeholder - implement actual progress calculation
         self.progressItems = [
             ProgressItem(id: "1", title: "Total Workouts", value: "\(user.workoutsCompleted ?? 0)"),
             ProgressItem(id: "2", title: "Avg. Duration", value: formatDuration(user.averageWorkoutDuration ?? 0))

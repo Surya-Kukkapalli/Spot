@@ -10,8 +10,10 @@ class FollowersViewModel: ObservableObject {
     private let db = Firestore.firestore()
     
     func fetchFollowers(for userId: String) async {
+        print("DEBUG: Fetching followers for user ID: '\(userId)'")
         guard !userId.isEmpty else {
             error = "Invalid user ID"
+            print("DEBUG: Empty user ID in fetchFollowers")
             return
         }
         
@@ -19,24 +21,40 @@ class FollowersViewModel: ObservableObject {
         
         do {
             let userDoc = try await db.collection("users").document(userId).getDocument()
+            print("DEBUG: User document exists: \(userDoc.exists)")
+
             guard let user = try? userDoc.data(as: User.self),
                   !user.followerIds.isEmpty else {
+                print("DEBUG: No follower IDs found")
                 followers = []
                 isLoading = false
                 return
             }
+
+            print("DEBUG: Found \(user.followerIds.count) following IDs")
             
             let followersSnapshot = try await db.collection("users")
                 .whereField(FieldPath.documentID(), in: user.followerIds)
                 .getDocuments()
             
-            followers = followersSnapshot.documents.compactMap { document in
-                try? document.data(as: User.self)
+            followers = followersSnapshot.documents.compactMap { document -> User? in
+                do {
+                    var user = try document.data(as: User.self)
+                    user.id = document.documentID // Ensure ID is set
+                    print("DEBUG: Successfully decoded follower: \(user.username) with ID: \(user.id ?? "nil")")
+                    return user
+                } catch {
+                    print("DEBUG: Error decoding follower document: \(error)")
+                    return nil
+                }
             }
+            
+            print("DEBUG: Successfully loaded \(followers.count) followers")
         } catch {
             self.error = error.localizedDescription
-            print("Error fetching followers: \(error)")
+            print("DEBUG: Error fetching followers: \(error)")
         }
+        
         
         isLoading = false
     }

@@ -88,7 +88,7 @@ struct WorkoutSummaryCard: View {
                             }
                         }
                     }) {
-                        Label("Copy Workout", systemImage: "doc.on.doc")
+                        Label("Save Workout", systemImage: "doc.on.doc")
                     }
                     
                     Button(action: {
@@ -294,7 +294,7 @@ struct WorkoutSummaryCard: View {
                                 }
                             }
                         }) {
-                            Label("Copy Workout", systemImage: "doc.on.doc")
+                            Label("Save Workout", systemImage: "doc.on.doc")
                         }
                         
                         Button(action: {

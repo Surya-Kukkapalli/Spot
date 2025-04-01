@@ -30,7 +30,7 @@ struct PublicWorkoutsView: View {
         .task {
             await viewModel.fetchPublicWorkouts(userId: userId)
         }
-        .alert("Workout Copied!", isPresented: $showCopiedAlert) {
+        .alert("Workout Saved!", isPresented: $showCopiedAlert) {
             Button("OK", role: .cancel) { }
         } message: {
             Text("You can find it in the templates section when logging your next workout.")

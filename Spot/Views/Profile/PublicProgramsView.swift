@@ -30,7 +30,7 @@ struct PublicProgramsView: View {
         .task {
             await viewModel.fetchPublicPrograms(userId: userId)
         }
-        .alert("Program Copied!", isPresented: $showCopiedAlert) {
+        .alert("Program Saved!", isPresented: $showCopiedAlert) {
             Button("OK", role: .cancel) { }
         } message: {
             Text("You can find it in your programs section.")
@@ -60,7 +60,7 @@ struct PublicProgramCard: View {
                     
                     Menu {
                         Button(action: onCopy) {
-                            Label("Copy Program", systemImage: "doc.on.doc")
+                            Label("Save Program", systemImage: "doc.on.doc")
                         }
                     } label: {
                         Image(systemName: "ellipsis")
