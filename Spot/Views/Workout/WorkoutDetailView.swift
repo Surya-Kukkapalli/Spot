@@ -20,13 +20,16 @@ struct WorkoutDetailView: View {
     
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 16) {
+                // Header
                 WorkoutHeaderView(workout: workout)
                     .id(workout.id)
                 
+                // Stats
                 WorkoutStatsView(workout: workout)
                     .id(workout.id)
                 
+                // Interaction buttons
                 WorkoutInteractionButtonsView(
                     workout: workout,
                     hasLiked: $hasLiked,
@@ -37,7 +40,9 @@ struct WorkoutDetailView: View {
                 )
                 .id(workout.id)
                 
-                // Add Muscle Split View
+                Divider()
+                
+                // Muscle Split
                 if !workout.muscleSplit.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Muscle Split")
@@ -68,9 +73,11 @@ struct WorkoutDetailView: View {
                             }
                         }
                     }
-                    .padding(.vertical)
                 }
                 
+                Divider()
+                
+                // Exercises
                 WorkoutExercisesView(
                     workout: workout,
                     showingPRAlert: $showingPRAlert,
