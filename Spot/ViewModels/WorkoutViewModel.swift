@@ -196,13 +196,11 @@ class WorkoutViewModel: ObservableObject {
         let prService = PersonalRecordService()
         var personalRecords: [String: PersonalRecord] = [:]
         
-        print("DEBUG: Processing exercises for PRs...")
         let exerciseSummaries = try await withThrowingTaskGroup(of: (WorkoutSummary.Exercise, PersonalRecord?).self) { group in
             for exercise in exercises {
                 group.addTask {
-                    print("DEBUG: Processing exercise: \(exercise.name)")
                     let sets = exercise.sets.map { set -> WorkoutSummary.Exercise.Set in
-                        WorkoutSummary.Exercise.Set(
+                        return WorkoutSummary.Exercise.Set(
                             weight: set.weight,
                             reps: set.reps,
                             isPR: false  // Will be updated if it's a PR
@@ -212,22 +210,20 @@ class WorkoutViewModel: ObservableObject {
                     var summaryExercise = WorkoutSummary.Exercise(
                         exerciseName: exercise.name,
                         imageUrl: exercise.gifUrl,
-                        targetMuscle: exercise.target ?? "Other",
+                        targetMuscle: exercise.target,
                         sets: sets,
                         hasPR: false
                     )
                     
                     // Check if any set is a PR
                     if let bestSet = exercise.sets.max(by: { $0.volume < $1.volume }) {
-                        print("DEBUG: Best set found - Weight: \(bestSet.weight), Reps: \(bestSet.reps)")
                         let isPR = try await prService.checkAndUpdatePR(
-                            userId: currentUser.uid,  // Use currentUser.uid directly instead of user.id
+                            userId: currentUser.uid,
                             exercise: summaryExercise,
                             workoutId: workout.id
                         )
                         
                         if isPR {
-                            print("DEBUG: PR detected for \(exercise.name)")
                             // Update the set that was a PR
                             if let prSetIndex = summaryExercise.sets.firstIndex(where: { 
                                 $0.weight == bestSet.weight && $0.reps == bestSet.reps 
@@ -245,7 +241,7 @@ class WorkoutViewModel: ObservableObject {
                                 oneRepMax: OneRepMax.calculate(weight: bestSet.weight, reps: bestSet.reps),
                                 date: workout.createdAt,
                                 workoutId: workout.id,
-                                userId: currentUser.uid  // Use currentUser.uid consistently
+                                userId: currentUser.uid
                             )
                             return (summaryExercise, pr)
                         }
@@ -259,21 +255,20 @@ class WorkoutViewModel: ObservableObject {
             for try await (exercise, pr) in group {
                 summaries.append(exercise)
                 if let pr = pr {
-                    print("DEBUG: Adding PR for \(pr.exerciseName) to summary")
                     personalRecords[pr.exerciseName] = pr
                 }
             }
             return summaries
         }
         
-        // Create workout summary with the correct name and notes from the workout
+        // Create workout summary
         let summary = WorkoutSummary(
             id: workout.id,
-            userId: currentUser.uid,  // Use currentUser.uid consistently
+            userId: currentUser.uid,
             username: user.username,
             userProfileImageUrl: user.profileImageUrl,
-            workoutTitle: workout.name,  // Use the workout's name
-            workoutNotes: workout.notes,  // Use the workout's notes
+            workoutTitle: workout.name,
+            workoutNotes: workout.notes,
             createdAt: workout.createdAt,
             duration: Int(workout.duration / 60),
             totalVolume: calculateVolume(),
@@ -283,19 +278,20 @@ class WorkoutViewModel: ObservableObject {
             personalRecords: personalRecords
         )
         
-        print("DEBUG: Final workout summary:")
-        print("DEBUG: Title: '\(summary.workoutTitle)'")
-        print("DEBUG: Notes: '\(summary.workoutNotes ?? "none")'")
-        print("DEBUG: Number of exercises: \(summary.exercises.count)")
-        print("DEBUG: Created at: \(summary.createdAt)")
-        print("DEBUG: Personal Records: \(personalRecords.count)")
-        
         // Save the workout summary
         let encodedSummary = try Firestore.Encoder().encode(summary)
         try await db.collection("workoutSummaries")
             .document(workout.id)
             .setData(encodedSummary)
         print("DEBUG: Saved workout summary to workoutSummaries collection")
+        
+        // Track challenge progress
+        let challengeProgressService = ChallengeProgressService()
+        print("DEBUG: Starting to track workout progress for challenges")
+        print("DEBUG: Workout summary - Total Volume: \(summary.totalVolume)")
+        print("DEBUG: Workout summary - Exercise count: \(summary.exercises.count)")
+        try await challengeProgressService.trackWorkoutProgress(summary, userId: currentUser.uid)
+        print("DEBUG: Completed tracking workout progress for challenges")
         
         // Notify PR service to refresh caches if needed
         if !personalRecords.isEmpty {
@@ -332,6 +328,9 @@ class WorkoutViewModel: ObservableObject {
             self.exercises = []
             self.isWorkoutInProgress = false
             self.workoutStartTime = nil
+            self.currentRestTimer?.invalidate()
+            self.currentRestTimer = nil
+            self.remainingRestTime = 0
         }
         print("DEBUG: Workout state reset")
     }

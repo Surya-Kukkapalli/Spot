@@ -92,6 +92,7 @@ struct SaveWorkoutView: View {
                             }
                             try? await viewModel.finishWorkout()
                             await MainActor.run {
+                                viewModel.isWorkoutInProgress = false
                                 dismiss()
                             }
                         }
