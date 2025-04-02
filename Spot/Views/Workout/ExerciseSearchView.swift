@@ -9,6 +9,9 @@ class ExerciseSearchViewModel: ObservableObject {
     @Published var selectedFilter: FilterType = .all
     @Published var selectedExercises: Set<String> = [] // Track selected exercise IDs
     @Published var allExercises: [ExerciseTemplate] = []
+    @Published var selectedEquipment: Set<String> = []
+    @Published var selectedMuscles: Set<String> = []
+    @Published var showFilterSheet = false
     private var hasMoreExercises = true
     
     enum FilterType {
@@ -17,22 +20,42 @@ class ExerciseSearchViewModel: ObservableObject {
         case muscles
     }
     
+    var availableEquipment: [String] {
+        Set(allExercises.map { $0.equipment }).sorted()
+    }
+    
+    var availableMuscles: [String] {
+        var muscles = Set<String>()
+        for exercise in allExercises {
+            muscles.insert(exercise.target)
+            muscles.formUnion(exercise.secondaryMuscles)
+        }
+        return muscles.sorted()
+    }
+    
     var organizedExercises: [(section: String, exercises: [ExerciseTemplate])] {
         var sections: [(String, [ExerciseTemplate])] = []
         
-        // Get exercises that match search
-        let searchResults: [ExerciseTemplate]
-        if searchText.isEmpty {
-            searchResults = filteredExercises
-        } else {
-            let searchSource = !allExercises.isEmpty ? allExercises : filteredExercises
-            searchResults = searchSource.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        // Use allExercises for search and filtering if available
+        let sourceExercises = !allExercises.isEmpty ? allExercises : exercises
+        
+        // Get exercises that match search and filters
+        let searchResults = sourceExercises.filter { exercise in
+            let matchesSearch = searchText.isEmpty || 
+                exercise.name.localizedCaseInsensitiveContains(searchText)
+            let matchesEquipment = selectedEquipment.isEmpty || 
+                selectedEquipment.contains(exercise.equipment)
+            let matchesMuscles = selectedMuscles.isEmpty || 
+                selectedMuscles.contains(exercise.target) ||
+                !Set(exercise.secondaryMuscles).isDisjoint(with: selectedMuscles)
+            return matchesSearch && matchesEquipment && matchesMuscles
         }
         
         // Recent section
         let recentExercises = ExerciseService.shared.getRecentExercises()
-        let recentSearchResults = searchText.isEmpty ? recentExercises :
-            recentExercises.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        let recentSearchResults = searchResults.filter { exercise in
+            recentExercises.contains { $0.id == exercise.id }
+        }
         
         if !recentSearchResults.isEmpty {
             sections.append(("Recent Exercises", recentSearchResults))
@@ -52,11 +75,14 @@ class ExerciseSearchViewModel: ObservableObject {
     
     @MainActor
     func loadAllExercisesIfNeeded() async {
-        guard !searchText.isEmpty && allExercises.isEmpty else { return }
+        // Always load all exercises for search and filters
+        guard allExercises.isEmpty else { return }
         
         isLoading = true
         do {
             allExercises = try await ExerciseService.shared.fetchAllExercises()
+            // Update available equipment and muscles based on all exercises
+            filterExercises()
         } catch {
             self.error = error.localizedDescription
         }
@@ -114,8 +140,85 @@ class ExerciseSearchViewModel: ObservableObject {
     }
     
     func filterExercises() {
-        // Implement filtering based on equipment or muscles when those views are added
-        filteredExercises = exercises
+        filteredExercises = exercises.filter { exercise in
+            let matchesEquipment = selectedEquipment.isEmpty || selectedEquipment.contains(exercise.equipment)
+            let matchesMuscles = selectedMuscles.isEmpty || 
+                selectedMuscles.contains(exercise.target) ||
+                !Set(exercise.secondaryMuscles).isDisjoint(with: selectedMuscles)
+            return matchesEquipment && matchesMuscles
+        }
+    }
+    
+    func toggleEquipment(_ equipment: String) {
+        if selectedEquipment.contains(equipment) {
+            selectedEquipment.remove(equipment)
+        } else {
+            selectedEquipment.insert(equipment)
+        }
+        filterExercises()
+    }
+    
+    func toggleMuscle(_ muscle: String) {
+        if selectedMuscles.contains(muscle) {
+            selectedMuscles.remove(muscle)
+        } else {
+            selectedMuscles.insert(muscle)
+        }
+        filterExercises()
+    }
+}
+
+struct FilterSheetView: View {
+    @ObservedObject var viewModel: ExerciseSearchViewModel
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        NavigationView {
+            List {
+                if viewModel.selectedFilter == .equipment {
+                    Section("Equipment") {
+                        ForEach(viewModel.availableEquipment, id: \.self) { equipment in
+                            Button(action: { viewModel.toggleEquipment(equipment) }) {
+                                HStack {
+                                    Text(equipment.capitalized)
+                                    Spacer()
+                                    if viewModel.selectedEquipment.contains(equipment) {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(.blue)
+                                    }
+                                }
+                            }
+                            .foregroundColor(.primary)
+                        }
+                    }
+                } else if viewModel.selectedFilter == .muscles {
+                    Section("Muscles") {
+                        ForEach(viewModel.availableMuscles, id: \.self) { muscle in
+                            Button(action: { viewModel.toggleMuscle(muscle) }) {
+                                HStack {
+                                    Text(muscle.capitalized)
+                                    Spacer()
+                                    if viewModel.selectedMuscles.contains(muscle) {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(.blue)
+                                    }
+                                }
+                            }
+                            .foregroundColor(.primary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(viewModel.selectedFilter == .equipment ? "Equipment" : "Muscles")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -132,15 +235,33 @@ struct ExerciseSearchView: View {
             
             // Filter buttons
             HStack(spacing: 16) {
-                Button("All Equipment") {
+                Button(action: {
                     viewModel.selectedFilter = .equipment
+                    viewModel.showFilterSheet = true
+                }) {
+                    HStack {
+                        Text("All Equipment")
+                        if !viewModel.selectedEquipment.isEmpty {
+                            Text("(\(viewModel.selectedEquipment.count))")
+                                .foregroundColor(.blue)
+                        }
+                    }
                 }
-                .buttonStyle(FilterButtonStyle(isSelected: viewModel.selectedFilter == .equipment))
+                .buttonStyle(FilterButtonStyle(isSelected: !viewModel.selectedEquipment.isEmpty))
                 
-                Button("All Muscles") {
+                Button(action: {
                     viewModel.selectedFilter = .muscles
+                    viewModel.showFilterSheet = true
+                }) {
+                    HStack {
+                        Text("All Muscles")
+                        if !viewModel.selectedMuscles.isEmpty {
+                            Text("(\(viewModel.selectedMuscles.count))")
+                                .foregroundColor(.blue)
+                        }
+                    }
                 }
-                .buttonStyle(FilterButtonStyle(isSelected: viewModel.selectedFilter == .muscles))
+                .buttonStyle(FilterButtonStyle(isSelected: !viewModel.selectedMuscles.isEmpty))
             }
             .padding(.horizontal)
             .padding(.bottom)
@@ -148,25 +269,27 @@ struct ExerciseSearchView: View {
             // Exercise list
             List {
                 ForEach(viewModel.organizedExercises, id: \.section) { section in
-                    Section(header: Text(section.section)) {
+                    Section(header: Text(section.section)
+                        .foregroundColor(Color.gray.opacity(0.8))
+                        .font(.system(size: 17))
+                        .textCase(nil)
+                        .padding(.bottom, 8)
+                    ) {
                         ForEach(section.exercises) { exercise in
                             ExerciseRowView(
                                 exercise: exercise,
                                 isSelected: viewModel.selectedExercises.contains(exercise.id),
                                 onSelect: {
-                                    print("DEBUG: Exercise tapped: \(exercise.name)")
                                     if viewModel.selectedExercises.contains(exercise.id) {
-                                        print("DEBUG: Removing exercise from selection: \(exercise.name)")
                                         viewModel.selectedExercises.remove(exercise.id)
                                     } else {
-                                        print("DEBUG: Adding exercise to selection: \(exercise.name)")
                                         viewModel.selectedExercises.insert(exercise.id)
                                     }
-                                    print("DEBUG: Selected exercises count: \(viewModel.selectedExercises.count)")
                                 }
                             )
                             .listRowInsets(EdgeInsets())
-                            .listRowSeparator(.hidden)
+                            .listRowSeparator(.visible)
+                            .listRowBackground(Color.clear)
                         }
                     }
                 }
@@ -190,8 +313,15 @@ struct ExerciseSearchView: View {
         .navigationTitle("Add Exercise")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            print("DEBUG: Loading exercises in ExerciseSearchView")
-            await viewModel.loadExercises()
+            // Load all exercises at startup
+            await viewModel.loadAllExercisesIfNeeded()
+        }
+        .onChange(of: viewModel.searchText) { _, _ in
+            // No need to reload since we have all exercises
+            viewModel.filterExercises()
+        }
+        .sheet(isPresented: $viewModel.showFilterSheet) {
+            FilterSheetView(viewModel: viewModel)
         }
     }
     
@@ -230,15 +360,23 @@ struct ExerciseRowView: View {
     let onSelect: () -> Void
     
     var body: some View {
-        HStack(spacing: 0) {
-            // Selection indicator
-            Rectangle()
-                .fill(isSelected ? Color.blue : Color.clear)
-                .frame(width: 4)
+        ZStack {
+            // Background selection indicator
+            if isSelected {
+                Rectangle()
+                    .fill(Color.blue.opacity(0.1))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             
-            // Main content
-            Button(action: onSelect) {
-                HStack(spacing: 1) {
+            HStack(spacing: 1) {
+                // Blue selection bar
+                Rectangle()
+                    .fill(isSelected ? Color.blue : Color.clear)
+                    .frame(width: 4)
+                
+                // Content area
+                HStack(spacing: 10) {
+                    // Exercise image
                     AsyncImage(url: URL(string: exercise.gifUrl)) { image in
                         image
                             .resizable()
@@ -246,37 +384,50 @@ struct ExerciseRowView: View {
                     } placeholder: {
                         Color.gray.opacity(0.3)
                     }
-                    .frame(width: 55, height: 50)
+                    .frame(width: 50, height: 50)
                     .cornerRadius(8)
                     
+                    // Exercise details
                     VStack(alignment: .leading, spacing: 4) {
                         Text(exercise.name.capitalized)
                             .font(.headline)
+                            .foregroundColor(.primary)
                         Text(exercise.target.capitalized)
                             .font(.subheadline)
-                            .foregroundColor(.gray)
+                            .foregroundColor(Color.gray.opacity(0.8))
                     }
                     
                     Spacer()
+                    Spacer()
+                    
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(PlainButtonStyle())
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
             
-            // Analytics icon
+            Spacer()
+            
+            // Analytics Icon
             NavigationLink(destination: ExerciseDetailsView(exercise: exercise)) {
                 Image(systemName: "chart.line.uptrend.xyaxis")
                     .foregroundColor(.gray)
-                    .padding(8)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    .frame(width: 32, height: 32)
+                    .background(Color(.systemGray6))
+                    .clipShape(Circle())
+                    .opacity(0) // Hides the icon for now until I figure out how to use it to cover up the chevron ">" indicator
+            }
+            .buttonStyle(PlainButtonStyle())
+            
+            
+            // Invisible button for selection covering everything except the analytics icon
+            Button(action: onSelect) {
+                Rectangle()
+                    .fill(Color.clear)
                     .contentShape(Rectangle())
             }
             .buttonStyle(PlainButtonStyle())
-            .padding(.trailing, 8)
+            // Adjust the frame to not cover the analytics icon
+            .padding(.trailing, 60)
         }
-        .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+        .frame(height: 89)
     }
 }
 

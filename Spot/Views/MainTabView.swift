@@ -26,16 +26,16 @@ struct MainTabView: View {
                 }
                 .tag(2)
             
-            AnalyticsView()
+            CommunityView()
                 .tabItem {
-                    Image(systemName: "chart.bar")
-                    Text("Analytics")
+                    Image(systemName: "person.3")
+                    Text("Community")
                 }
                 .tag(3)
             
             ProfileView()
                 .tabItem {
-                    Image(systemName: "person")
+                    Image(systemName: "person.crop.circle")
                     Text("Profile")
                 }
                 .tag(4)
