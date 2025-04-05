@@ -3,22 +3,29 @@ import SwiftUI
 struct TeamsView: View {
     @ObservedObject var viewModel: CommunityViewModel
     @State private var showingCreateTeam = false
+    @State private var showingSearch = false
     
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 // Create Team prompt
-                createTeamPrompt
+                if viewModel.teams.isEmpty {
+                    createTeamPrompt
+                }
                 
+                // User's teams
                 if !viewModel.teams.isEmpty {
-                    // User's teams
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Your Teams")
                             .font(.title2)
                             .bold()
                         
                         ForEach(viewModel.teams) { team in
-                            TeamCard(team: team)
+                            NavigationLink {
+                                TeamDetailsView(team: team, viewModel: viewModel)
+                            } label: {
+                                TeamCard(team: team)
+                            }
                         }
                     }
                     .padding(.horizontal)
@@ -27,12 +34,29 @@ struct TeamsView: View {
             .padding(.vertical)
         }
         .sheet(isPresented: $showingCreateTeam) {
-            CreateTeamView(viewModel: viewModel)
+            CreateTeamFlowView(viewModel: viewModel)
+        }
+        .sheet(isPresented: $showingSearch) {
+            SearchTeamsView(viewModel: viewModel)
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    showingSearch = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                }
+            }
         }
     }
     
     private var createTeamPrompt: some View {
         VStack(spacing: 16) {
+            Image("team_thumbnail") // Add this image to your assets
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(height: 200)
+            
             Text("Create your own Spot team")
                 .font(.title2)
                 .bold()
@@ -72,13 +96,18 @@ struct TeamCard: View {
                             .clipShape(Circle())
                     } placeholder: {
                         Circle()
-                            .fill(Color.gray)
+                            .fill(Color.gray.opacity(0.1))
                             .frame(width: 60, height: 60)
                     }
                 } else {
                     Circle()
-                        .fill(Color.gray)
+                        .fill(Color.gray.opacity(0.1))
                         .frame(width: 60, height: 60)
+                        .overlay {
+                            Image(systemName: "person.3.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.gray)
+                        }
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
@@ -86,19 +115,24 @@ struct TeamCard: View {
                         .font(.headline)
                     
                     HStack {
-                        Image(systemName: "person.2")
-                        Text("\(team.members.count) Members")
+                        Label("\(team.members.count) Members", systemImage: "person.2")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        if team.isPrivate {
+                            Image(systemName: "lock.fill")
+                                .foregroundColor(.secondary)
+                        }
                     }
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    
+                    if !team.tags.isEmpty {
+                        Text(team.tags.joined(separator: ", "))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 
                 Spacer()
-                
-                if team.isPrivate {
-                    Image(systemName: "lock.fill")
-                        .foregroundColor(.secondary)
-                }
             }
             
             // Team description
@@ -107,15 +141,38 @@ struct TeamCard: View {
                 .foregroundColor(.secondary)
                 .lineLimit(2)
             
-            // Team goals
-            if !team.goals.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Active Goals")
-                        .font(.subheadline)
-                        .bold()
+            // Latest post preview if available
+            if let latestPost = team.posts.first {
+                Divider()
+                
+                HStack(spacing: 12) {
+                    if let authorImageUrl = latestPost.authorImageUrl {
+                        AsyncImage(url: URL(string: authorImageUrl)) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 32, height: 32)
+                                .clipShape(Circle())
+                        } placeholder: {
+                            Circle()
+                                .fill(Color.gray.opacity(0.1))
+                                .frame(width: 32, height: 32)
+                        }
+                    } else {
+                        Circle()
+                            .fill(Color.gray.opacity(0.1))
+                            .frame(width: 32, height: 32)
+                    }
                     
-                    ForEach(team.goals.prefix(2)) { goal in
-                        TeamGoalRow(goal: goal)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(latestPost.authorName)
+                            .font(.subheadline)
+                            .bold()
+                        
+                        Text(latestPost.content)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
                     }
                 }
             }
@@ -124,40 +181,6 @@ struct TeamCard: View {
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(radius: 2)
-    }
-}
-
-struct TeamGoalRow: View {
-    let goal: Team.TeamGoal
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(goal.title)
-                    .font(.subheadline)
-                
-                Spacer()
-                
-                Text("\(Int(goal.progress / goal.target * 100))%")
-                    .font(.caption)
-                    .bold()
-            }
-            
-            ProgressView(value: goal.progress, total: goal.target)
-                .tint(.orange)
-            
-            HStack {
-                Text("\(Int(goal.progress)) / \(Int(goal.target)) \(goal.unit)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-                
-                Text(goal.targetDate.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
     }
 }
 

@@ -2,83 +2,42 @@ import Foundation
 import FirebaseFirestore
 
 struct Team: Identifiable, Codable {
-    let id: String
-    let name: String
-    let description: String
-    let createdAt: Date
-    let creatorId: String
-    var members: [String] // User IDs
-    var admins: [String] // User IDs with admin privileges
+    @DocumentID var id: String?
+    var name: String
+    var description: String
+    var creatorId: String
     var imageUrl: String?
-    var goals: [TeamGoal]
+    var members: [String]
+    var tags: [String]
     var isPrivate: Bool
+    var posts: [TeamPost]
+    var admins: [String]
+    var goals: [TeamGoal]
     
-    struct TeamGoal: Identifiable, Codable {
-        let id: String
-        let title: String
-        let description: String
-        let targetDate: Date
-        let type: GoalType
-        let target: Double
-        let unit: String
-        var progress: Double
-        var isCompleted: Bool
-        
-        enum GoalType: String, Codable {
-            case collective // Team total
-            case average // Per member average
-            case individual // Each member must achieve
-        }
-        
-        init(id: String = UUID().uuidString,
-             title: String,
-             description: String,
-             targetDate: Date,
-             type: GoalType,
-             target: Double,
-             unit: String,
-             progress: Double = 0,
-             isCompleted: Bool = false) {
-            self.id = id
-            self.title = title
-            self.description = description
-            self.targetDate = targetDate
-            self.type = type
-            self.target = target
-            self.unit = unit
-            self.progress = progress
-            self.isCompleted = isCompleted
-        }
-    }
-    
-    init(id: String = UUID().uuidString,
-         name: String,
-         description: String,
-         createdAt: Date = Date(),
-         creatorId: String,
-         members: [String] = [],
-         admins: [String] = [],
-         imageUrl: String? = nil,
-         goals: [TeamGoal] = [],
-         isPrivate: Bool = false) {
+    init(
+        id: String? = UUID().uuidString,
+        name: String,
+        description: String,
+        creatorId: String,
+        imageUrl: String? = nil,
+        members: [String] = [],
+        tags: [String] = [],
+        isPrivate: Bool = false,
+        posts: [TeamPost] = [],
+        admins: [String] = [],
+        goals: [TeamGoal] = []
+    ) {
         self.id = id
         self.name = name
         self.description = description
-        self.createdAt = createdAt
         self.creatorId = creatorId
-        self.members = members
-        self.admins = admins
         self.imageUrl = imageUrl
-        self.goals = goals
+        self.members = members.isEmpty ? [creatorId] : members
+        self.tags = tags
         self.isPrivate = isPrivate
-        
-        // Ensure creator is both a member and admin
-        if !members.contains(creatorId) {
-            self.members.append(creatorId)
-        }
-        if !admins.contains(creatorId) {
-            self.admins.append(creatorId)
-        }
+        self.posts = posts
+        self.admins = admins.isEmpty ? [creatorId] : admins
+        self.goals = goals
     }
     
     // Helper methods
@@ -114,4 +73,83 @@ struct Team: Identifiable, Codable {
         guard userId != creatorId else { return } // Can't remove creator from admin
         admins.removeAll { $0 == userId }
     }
-} 
+}
+
+struct TeamGoal: Identifiable, Codable {
+    var id: String
+    var title: String
+    var description: String
+    var targetDate: Date
+    var type: GoalType
+    var target: Double
+    var unit: String
+    var progress: Double
+    var isCompleted: Bool
+    
+    enum GoalType: String, Codable {
+        case collective // Team total
+        case average // Per member average
+        case individual // Each member must achieve
+    }
+    
+    init(
+        id: String = UUID().uuidString,
+        title: String,
+        description: String,
+        targetDate: Date,
+        type: GoalType,
+        target: Double,
+        unit: String,
+        progress: Double = 0,
+        isCompleted: Bool = false
+    ) {
+        self.id = id
+        self.title = title
+        self.description = description
+        self.targetDate = targetDate
+        self.type = type
+        self.target = target
+        self.unit = unit
+        self.progress = progress
+        self.isCompleted = isCompleted
+    }
+}
+
+struct TeamPost: Identifiable, Codable {
+    var id: String
+    var content: String
+    var authorId: String
+    var authorName: String
+    var authorImageUrl: String?
+    var imageUrl: String?
+    var createdAt: Date
+    var isAdmin: Bool
+    var likes: [String]
+    var comments: [Comment]
+    
+    init(
+        id: String = UUID().uuidString,
+        content: String,
+        authorId: String,
+        authorName: String,
+        authorImageUrl: String? = nil,
+        imageUrl: String? = nil,
+        createdAt: Date = Date(),
+        isAdmin: Bool = false,
+        likes: [String] = [],
+        comments: [Comment] = []
+    ) {
+        self.id = id
+        self.content = content
+        self.authorId = authorId
+        self.authorName = authorName
+        self.authorImageUrl = authorImageUrl
+        self.imageUrl = imageUrl
+        self.createdAt = createdAt
+        self.isAdmin = isAdmin
+        self.likes = likes
+        self.comments = comments
+    }
+}
+
+

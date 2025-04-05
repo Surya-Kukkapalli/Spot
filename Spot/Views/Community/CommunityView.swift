@@ -74,9 +74,11 @@ class CommunityViewModel: ObservableObject {
     @Published var activeChallenges: [Challenge] = []
     @Published var availableChallenges: [Challenge] = []
     @Published var teams: [Team] = []
-    @Published var userProgress: [String: Double] = [:] // Challenge ID to progress mapping
+    @Published var publicTeams: [Team] = []
+    @Published var userProgress: [String: Double] = [:]
     @Published var errorMessage: String?
     @Published var isLoading = false
+    @Published var currentUserImage: UIImage?
     
     private let service = CommunityService()
     private let auth = Auth.auth()
@@ -94,8 +96,14 @@ class CommunityViewModel: ObservableObject {
             async let activeChallengesTask = service.getActiveChallenges(for: userId)
             async let availableChallengesTask = service.getAvailableChallenges()
             async let teamsTask = service.getUserTeams(for: userId)
+            async let userImageTask = loadUserImage()
             
-            let (active, available, userTeams) = try await (activeChallengesTask, availableChallengesTask, teamsTask)
+            let (active, available, userTeams, _) = try await (
+                activeChallengesTask,
+                availableChallengesTask,
+                teamsTask,
+                userImageTask
+            )
             
             await MainActor.run {
                 self.activeChallenges = active
@@ -109,13 +117,42 @@ class CommunityViewModel: ObservableObject {
                 // Update progress for active challenges
                 for challenge in active {
                     self.userProgress[challenge.id] = challenge.progressForUser(userId)
-                    print("DEBUG: Progress for challenge \(challenge.title): \(challenge.progressForUser(userId))")
                 }
             }
         } catch {
             print("DEBUG: Error loading data: \(error.localizedDescription)")
             errorMessage = error.localizedDescription
         }
+    }
+    
+    func loadPublicTeams() async {
+        do {
+            let teams = try await service.getPublicTeams()
+            await MainActor.run {
+                self.publicTeams = teams
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    private func loadUserImage() async {
+        do {
+            if let imageUrl = auth.currentUser?.photoURL {
+                let (data, _) = try await URLSession.shared.data(from: imageUrl)
+                if let image = UIImage(data: data) {
+                    await MainActor.run {
+                        self.currentUserImage = image
+                    }
+                }
+            }
+        } catch {
+            print("Error loading user image: \(error)")
+        }
+    }
+    
+    func hasJoinedTeam(_ team: Team) -> Bool {
+        team.members.contains(userId)
     }
     
     func hasJoinedChallenge(_ challenge: Challenge) -> Bool {
@@ -126,7 +163,7 @@ class CommunityViewModel: ObservableObject {
         Task {
             do {
                 try await service.joinChallenge(challenge.id, userId: userId)
-                await loadData() // Refresh data
+                await loadData()
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -137,7 +174,7 @@ class CommunityViewModel: ObservableObject {
         Task {
             do {
                 try await service.createChallenge(challenge)
-                await loadData() // Refresh data
+                await loadData()
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -148,7 +185,7 @@ class CommunityViewModel: ObservableObject {
         Task {
             do {
                 try await service.createTeam(team)
-                await loadData() // Refresh data
+                await loadData()
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -158,11 +195,71 @@ class CommunityViewModel: ObservableObject {
     func joinTeam(_ team: Team) {
         Task {
             do {
-                try await service.joinTeam(team.id, userId: userId)
-                await loadData() // Refresh data
+                guard let teamId = team.id else {
+                    errorMessage = "Invalid team ID"
+                    return
+                }
+                try await service.joinTeam(teamId, userId: userId)
+                await loadData()
             } catch {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+    
+    func createTeamPost(teamId: String?, content: String, image: UIImage?) async {
+        guard let teamId = teamId else { return }
+        
+        do {
+            var imageUrl: String?
+            if let image {
+                let storageService = StorageService()
+                imageUrl = try await storageService.uploadImage(image, path: "team_posts/\(teamId)/\(UUID().uuidString)")
+            }
+            
+            let post = TeamPost(
+                content: content,
+                authorId: userId,
+                authorName: auth.currentUser?.displayName ?? "Unknown",
+                authorImageUrl: auth.currentUser?.photoURL?.absoluteString,
+                imageUrl: imageUrl,
+                isAdmin: true // TODO: Check if user is admin
+            )
+            
+            try await service.createTeamPost(teamId: teamId, post: post)
+            await loadData()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    func addTeamGoal(_ teamId: String?, goal: TeamGoal) async {
+        guard let teamId = teamId else { return }
+        do {
+            try await service.addTeamGoal(teamId, goal: goal)
+            await loadData()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    func removeTeamGoal(_ teamId: String?, goalId: String) async {
+        guard let teamId = teamId else { return }
+        do {
+            try await service.removeTeamGoal(teamId, goalId: goalId)
+            await loadData()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    func updateTeamGoal(_ teamId: String?, goalId: String, progress: Double) async {
+        guard let teamId = teamId else { return }
+        do {
+            try await service.updateTeamGoal(teamId, goalId: goalId, progress: progress)
+            await loadData()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
     
@@ -171,17 +268,6 @@ class CommunityViewModel: ObservableObject {
             do {
                 try await service.updateChallengeProgress(challengeId, userId: userId, progress: progress)
                 userProgress[challengeId] = progress
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-    
-    func updateTeamGoal(_ teamId: String, goalId: String, progress: Double) {
-        Task {
-            do {
-                try await service.updateTeamGoal(teamId, goalId: goalId, progress: progress)
-                await loadData() // Refresh data to get updated team goals
             } catch {
                 errorMessage = error.localizedDescription
             }

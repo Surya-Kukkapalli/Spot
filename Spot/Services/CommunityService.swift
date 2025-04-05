@@ -148,9 +148,22 @@ class CommunityService {
         }
     }
     
+    func getPublicTeams() async throws -> [Team] {
+        let snapshot = try await db.collection("teams")
+            .whereField("isPrivate", isEqualTo: false)
+            .getDocuments()
+        
+        return try snapshot.documents.compactMap { document in
+            try document.data(as: Team.self)
+        }
+    }
+    
     func createTeam(_ team: Team) async throws {
+        guard let teamId = team.id else {
+            throw NSError(domain: "CommunityService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Team ID is required"])
+        }
         try await db.collection("teams")
-            .document(team.id)
+            .document(teamId)
             .setData(from: team)
     }
     
@@ -175,6 +188,25 @@ class CommunityService {
         }
     }
     
+    func createTeamPost(teamId: String, post: TeamPost) async throws {
+        let ref = db.collection("teams").document(teamId)
+        try await db.runTransaction { transaction, errorPointer in
+            do {
+                let snapshot = try transaction.getDocument(ref)
+                guard var team = try? snapshot.data(as: Team.self) else {
+                    throw NSError(domain: "CommunityService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Team not found"])
+                }
+                
+                team.posts.insert(post, at: 0)
+                try transaction.setData(from: team, forDocument: ref)
+                return nil
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+    }
+    
     func updateTeamGoal(_ teamId: String, goalId: String, progress: Double) async throws {
         let ref = db.collection("teams").document(teamId)
         try await db.runTransaction { transaction, errorPointer in
@@ -189,6 +221,44 @@ class CommunityService {
                     team.goals[index].isCompleted = progress >= team.goals[index].target
                     try transaction.setData(from: team, forDocument: ref)
                 }
+                return nil
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+    }
+    
+    func addTeamGoal(_ teamId: String, goal: TeamGoal) async throws {
+        let ref = db.collection("teams").document(teamId)
+        try await db.runTransaction { transaction, errorPointer in
+            do {
+                let snapshot = try transaction.getDocument(ref)
+                guard var team = try? snapshot.data(as: Team.self) else {
+                    throw NSError(domain: "CommunityService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Team not found"])
+                }
+                
+                team.goals.append(goal)
+                try transaction.setData(from: team, forDocument: ref)
+                return nil
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+    }
+    
+    func removeTeamGoal(_ teamId: String, goalId: String) async throws {
+        let ref = db.collection("teams").document(teamId)
+        try await db.runTransaction { transaction, errorPointer in
+            do {
+                let snapshot = try transaction.getDocument(ref)
+                guard var team = try? snapshot.data(as: Team.self) else {
+                    throw NSError(domain: "CommunityService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Team not found"])
+                }
+                
+                team.goals.removeAll { $0.id == goalId }
+                try transaction.setData(from: team, forDocument: ref)
                 return nil
             } catch {
                 errorPointer?.pointee = error as NSError
