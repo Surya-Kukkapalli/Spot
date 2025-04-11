@@ -5,34 +5,46 @@ struct WorkoutView: View {
     @StateObject private var viewModel = WorkoutViewModel()
     @State private var showExerciseSearch = false
     @State private var showSaveWorkout = false
+    @State private var isTransitioning = false
     
     var body: some View {
         NavigationStack {
-            if viewModel.isWorkoutInProgress {
-                let _ = print("DEBUG: Showing ActiveWorkoutView with \(viewModel.exercises.count) exercises")
-                ActiveWorkoutView(
-                    viewModel: viewModel,
-                    showExerciseSearch: $showExerciseSearch,
-                    showSaveWorkout: $showSaveWorkout
-                )
-                .navigationTitle("Log Workout")
-                .sheet(isPresented: $showExerciseSearch) {
-                    NavigationStack {
-                        ExerciseSearchView(workoutViewModel: viewModel)
+            ZStack {
+                if viewModel.isWorkoutInProgress {
+                    let _ = print("DEBUG: Showing ActiveWorkoutView with \(viewModel.exercises.count) exercises")
+                    ActiveWorkoutView(
+                        viewModel: viewModel,
+                        showExerciseSearch: $showExerciseSearch,
+                        showSaveWorkout: $showSaveWorkout
+                    )
+                    .navigationTitle("Log Workout")
+                    .sheet(isPresented: $showExerciseSearch) {
+                        NavigationStack {
+                            ExerciseSearchView(workoutViewModel: viewModel)
+                        }
                     }
+                    .sheet(isPresented: $showSaveWorkout) {
+                        SaveWorkoutView(viewModel: viewModel)
+                    }
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
+                    .onAppear {
+                        print("DEBUG: ActiveWorkoutView appeared")
+                        print("DEBUG: Current exercise count: \(viewModel.exercises.count)")
+                    }
+                } else {
+                    let _ = print("DEBUG: Showing WorkoutProgramView")
+                    WorkoutProgramView()
+                        .environment(\.workoutViewModel, viewModel)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .leading).combined(with: .opacity),
+                            removal: .move(edge: .trailing).combined(with: .opacity)
+                        ))
                 }
-                .sheet(isPresented: $showSaveWorkout) {
-                    SaveWorkoutView(viewModel: viewModel)
-                }
-                .onAppear {
-                    print("DEBUG: ActiveWorkoutView appeared")
-                    print("DEBUG: Current exercise count: \(viewModel.exercises.count)")
-                }
-            } else {
-                let _ = print("DEBUG: Showing WorkoutProgramView")
-                WorkoutProgramView()
-                    .environment(\.workoutViewModel, viewModel)
             }
+            .animation(.spring(response: 0.5, dampingFraction: 0.8), value: viewModel.isWorkoutInProgress)
         }
         .onChange(of: viewModel.isWorkoutInProgress) { newValue in
             print("DEBUG: isWorkoutInProgress changed to: \(newValue)")
@@ -62,10 +74,11 @@ private struct ActiveWorkoutView: View {
     @ObservedObject var viewModel: WorkoutViewModel
     @Binding var showExerciseSearch: Bool
     @Binding var showSaveWorkout: Bool
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
+            VStack(spacing: 16) {
                 // Stats Section
                 HStack(spacing: 40) {
                     StatView(title: "Duration", value: formatDuration())
@@ -80,59 +93,56 @@ private struct ActiveWorkoutView: View {
                         .padding(.vertical, 40)
                 } else {
                     // Exercise List
-                    LazyVStack(spacing: 12) {
+                    LazyVStack(spacing: 16) {
                         ForEach(Array(viewModel.exercises.enumerated()), id: \.element.id) { index, exercise in
                             WorkoutExerciseView(workoutViewModel: viewModel, exerciseIndex: index)
+                                .padding(.horizontal)
                         }
                     }
-                    .padding()
                 }
-                
-                // Bottom Buttons
-                VStack(spacing: 16) {
-                    addExerciseButton
-                    finishWorkoutButton
+            }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
                 }
-                .padding()
+            }
+            
+            ToolbarItem(placement: .principal) {
+                Text("Log Workout")
+                    .font(.system(.headline, design: .rounded))
+            }
+            
+            ToolbarItem(placement: .navigationBarTrailing) {
+                HStack {
+                    Button {
+                        //showRestTimerSheet = true
+                    } label: {
+                        Image(systemName: "timer")
+                    }
+                    
+                    Button {
+                        showSaveWorkout = true
+                    } label: {
+                        Text("Finish")
+                            .font(.system(.body, design: .rounded))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                    }
+                }
             }
         }
         .onAppear {
             print("DEBUG: ActiveWorkoutView appeared")
             print("DEBUG: Current exercise count: \(viewModel.exercises.count)")
             print("DEBUG: Exercise names: \(viewModel.exercises.map { $0.name })")
-        }
-    }
-    
-    private var addExerciseButton: some View {
-        Button {
-            print("DEBUG: Add Exercise button tapped")
-            showExerciseSearch = true
-        } label: {
-            HStack {
-                Image(systemName: "plus.circle.fill")
-                Text("Add Exercise")
-            }
-            .font(.headline)
-            .frame(maxWidth: .infinity)
-            .frame(height: 50)
-            .background(Color.blue)
-            .foregroundColor(.white)
-            .cornerRadius(10)
-        }
-    }
-    
-    private var finishWorkoutButton: some View {
-        Button {
-            print("DEBUG: Finish Workout button tapped")
-            showSaveWorkout = true
-        } label: {
-            Text("Finish Workout")
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(Color(.systemGray6))
-                .foregroundColor(.primary)
-                .cornerRadius(10)
         }
     }
     
@@ -163,10 +173,10 @@ struct StatView: View {
     var body: some View {
         VStack(spacing: 4) {
             Text(title)
-                .font(.subheadline)
+                .font(.system(.subheadline, design: .rounded))
                 .foregroundColor(.secondary)
             Text(value)
-                .font(.headline)
+                .font(.system(.headline, design: .rounded))
                 .foregroundColor(.blue)
         }
     }
@@ -189,21 +199,21 @@ struct EmptyWorkoutView: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             
-//            Button {
-//                showExerciseSearch = true
-//            } label: {
-//                HStack {
-//                    Image(systemName: "plus.circle.fill")
-//                    Text("Add Exercise")
-//                }
-//                .font(.headline)
-//                .frame(maxWidth: .infinity)
-//                .frame(height: 50)
-//                .background(Color.blue)
-//                .foregroundColor(.white)
-//                .cornerRadius(10)
-//                .padding(.horizontal, 40)
-//            }
+            Button {
+                showExerciseSearch = true
+            } label: {
+                HStack {
+                    Image(systemName: "plus.circle.fill")
+                    Text("Add Exercise")
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(10)
+                .padding(.horizontal, 40)
+            }
         }
     }
 }
@@ -213,6 +223,8 @@ struct WorkoutExerciseView: View {
     @ObservedObject var workoutViewModel: WorkoutViewModel
     let exerciseIndex: Int
     @State private var showingOptions = false
+    @State private var isRestTimerActive = false
+    @State private var showRestTimerSheet = false
     
     private var exercise: Exercise {
         guard workoutViewModel.exercises.indices.contains(exerciseIndex) else {
@@ -230,16 +242,28 @@ struct WorkoutExerciseView: View {
                 } placeholder: {
                     Color.gray.opacity(0.3)
                 }
-                .frame(width: 50, height: 50)
+                .frame(width: 40, height: 40)
                 .cornerRadius(8)
                 
-                Text(exercise.name.capitalized)
-                    .font(.title3)
-                    .fontWeight(.semibold)
+                HStack(spacing: 4) {
+                    Text(exercise.name)
+                        .font(.system(.title3, design: .rounded))
+                        .foregroundColor(.blue)
+                    
+                    Text("(\(exercise.equipment.description))")
+                        .font(.system(.title3, design: .rounded))
+                        .foregroundColor(.secondary)
+                }
                 
                 Spacer()
                 
                 Menu {
+                    Button {
+                        showRestTimerSheet = true
+                    } label: {
+                        Label("Rest Timer", systemImage: "timer")
+                    }
+                    
                     Button(role: .destructive) {
                         withAnimation {
                             workoutViewModel.removeExercise(at: exerciseIndex)
@@ -259,69 +283,101 @@ struct WorkoutExerciseView: View {
                 get: { exercise.notes ?? "" },
                 set: { workoutViewModel.exercises[exerciseIndex].notes = $0.isEmpty ? nil : $0 }
             ))
-            .textFieldStyle(.roundedBorder)
-            .font(.subheadline)
+            .font(.system(.body, design: .rounded))
+            .foregroundColor(.secondary)
             
-            // Rest Timer Toggle (to be implemented)
-            HStack {
-                Image(systemName: "clock")
-                    .foregroundColor(.blue)
-                Text("Rest Timer: OFF")
-                    .foregroundColor(.blue)
+            // Rest Timer Status
+            Button {
+                showRestTimerSheet = true
+            } label: {
+                HStack {
+                    Image(systemName: "timer")
+                        .foregroundColor(.blue)
+                    Text("Rest Timer: OFF")
+                        .foregroundColor(.blue)
+                }
             }
             
-            // Sets Header
-            HStack {
-                Text("SET")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(width: 40, alignment: .leading)
+            // Sets Section
+            VStack(spacing: 0) {
+                // Sets Header
+                HStack {
+                    Text("SET")
+                        .frame(width: 40, alignment: .leading)
+                    Text("PREVIOUS")
+                        .frame(width: 80, alignment: .leading)
+                    Text("LBS")
+                        .frame(width: 80)
+                    Text("REPS")
+                        .frame(width: 60)
+                    Spacer()
+                }
+                .font(.system(.caption, design: .rounded))
+                .foregroundColor(.secondary)
+                .padding(.vertical, 8)
                 
-                Text("PREVIOUS")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(width: 80)
-                
-                Text("LBS")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(width: 60)
-                
-                Text("REPS")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(width: 60)
-                
-                Spacer()
-            }
-            .padding(.top, 8)
-            
-            // Sets List
-            ForEach(exercise.sets.indices, id: \.self) { setIndex in
-                SetRow(
-                    set: $workoutViewModel.exercises[exerciseIndex].sets[setIndex],
-                    setNumber: setIndex + 1,
-                    previousSet: nil,
-                    onDelete: {
-                        workoutViewModel.exercises[exerciseIndex].sets.remove(at: setIndex)
+                // Sets List
+                ForEach(exercise.sets.indices, id: \.self) { setIndex in
+                    SetRow(
+                        set: $workoutViewModel.exercises[exerciseIndex].sets[setIndex],
+                        setNumber: setIndex + 1,
+                        previousSet: setIndex > 0 ? exercise.sets[setIndex - 1] : nil,
+                        onDelete: {
+                            workoutViewModel.removeSet(from: exerciseIndex, at: setIndex)
+                        },
+                        onDuplicate: {
+                            let set = exercise.sets[setIndex]
+                            var newSet = ExerciseSet(id: UUID().uuidString)
+                            newSet.weight = set.weight
+                            newSet.reps = set.reps
+                            newSet.type = set.type
+                            newSet.restInterval = set.restInterval
+                            workoutViewModel.exercises[exerciseIndex].sets.insert(newSet, at: setIndex + 1)
+                        }
+                    )
+                    
+                    if setIndex < exercise.sets.count - 1 {
+                        Divider()
                     }
-                )
+                }
             }
+            .background(Color(.systemBackground))
             
             // Add Set Button
             Button {
-                workoutViewModel.addSet(to: exerciseIndex)
+                withAnimation {
+                    workoutViewModel.addSet(to: exerciseIndex)
+                }
             } label: {
                 HStack {
-                    Image(systemName: "plus.circle.fill")
+                    Image(systemName: "plus")
                     Text("Add Set")
                 }
+                .font(.system(.body, design: .rounded))
                 .foregroundColor(.blue)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
             }
         }
         .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(10)
+        .background(Color(.systemBackground))
+        .sheet(isPresented: $showRestTimerSheet) {
+            RestTimerSetupView(
+                isPresented: $showRestTimerSheet,
+                exerciseName: exercise.name,
+                setNumber: exercise.sets.count,
+                onStart: { duration in
+                    isRestTimerActive = true
+                    workoutViewModel.startRestTimer(
+                        seconds: duration,
+                        exerciseName: exercise.name,
+                        setNumber: exercise.sets.count
+                    )
+                }
+            )
+        }
     }
 }
 
@@ -330,50 +386,95 @@ struct SetRow: View {
     let setNumber: Int
     let previousSet: ExerciseSet?
     let onDelete: () -> Void
+    let onDuplicate: () -> Void
+    @FocusState private var isWeightFocused: Bool
+    @FocusState private var isRepsFocused: Bool
+    @State private var weightText: String = ""
+    @State private var repsText: String = ""
     
     var body: some View {
         HStack {
             Text("\(setNumber)")
-                .font(.subheadline)
                 .frame(width: 40, alignment: .leading)
+                .foregroundColor(.secondary)
             
             if let previous = previousSet {
-                Text("\(Int(previous.weight))×\(previous.reps)")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .frame(width: 80)
+                Button {
+                    weightText = "\(Int(previous.weight))"
+                    repsText = "\(previous.reps)"
+                    set.weight = previous.weight
+                    set.reps = previous.reps
+                } label: {
+                    Text("\(Int(previous.weight))×\(previous.reps)")
+                        .foregroundColor(.secondary)
+                }
+                .frame(width: 80, alignment: .leading)
             } else {
                 Text("-")
-                    .font(.subheadline)
                     .foregroundColor(.secondary)
-                    .frame(width: 80)
+                    .frame(width: 80, alignment: .leading)
             }
             
-            TextField("0", value: $set.weight, format: .number)
-                .keyboardType(.decimalPad)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 60)
+            HStack(spacing: 2) {
+                TextField("0", text: $weightText)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .focused($isWeightFocused)
+                    .onChange(of: weightText) { newValue in
+                        if let weight = Double(newValue) {
+                            set.weight = weight
+                        }
+                    }
+                    .frame(width: 50)
+                
+                Text("lbs")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundColor(.secondary)
+            }
+            .frame(width: 80)
             
-            TextField("0", value: $set.reps, format: .number)
+            TextField("0", text: $repsText)
                 .keyboardType(.numberPad)
-                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .focused($isRepsFocused)
+                .onChange(of: repsText) { newValue in
+                    if let reps = Int(newValue) {
+                        set.reps = reps
+                    }
+                }
                 .frame(width: 60)
             
             Spacer()
             
             Button {
-                set.isCompleted.toggle()
+                withAnimation(.spring(response: 0.3)) {
+                    set.isCompleted.toggle()
+                }
             } label: {
                 Image(systemName: set.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(set.isCompleted ? .green : .gray)
+                    .font(.system(size: 22))
+                    .foregroundColor(set.isCompleted ? .green : .gray.opacity(0.3))
             }
         }
-        .swipeActions(edge: .trailing) {
+        .padding(.vertical, 8)
+        .listRowInsets(EdgeInsets())
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
                 onDelete()
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+            
+            Button {
+                onDuplicate()
+            } label: {
+                Label("Duplicate", systemImage: "plus.square.on.square")
+            }
+            .tint(.blue)
+        }
+        .onAppear {
+            weightText = set.weight > 0 ? "\(Int(set.weight))" : ""
+            repsText = set.reps > 0 ? "\(set.reps)" : ""
         }
     }
 }

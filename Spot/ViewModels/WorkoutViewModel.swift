@@ -2,6 +2,7 @@ import SwiftUI
 import Firebase
 import FirebaseAuth
 import FirebaseFirestore
+import ActivityKit
 
 @MainActor
 class WorkoutViewModel: ObservableObject {
@@ -11,6 +12,7 @@ class WorkoutViewModel: ObservableObject {
     @Published var workoutStartTime: Date?
     @Published var currentRestTimer: Timer?
     @Published var remainingRestTime: TimeInterval = 0
+    private var restActivity: Activity<RestTimerAttributes>?
     
     var workoutDuration: TimeInterval {
         guard let startTime = workoutStartTime else { return 0 }
@@ -69,7 +71,12 @@ class WorkoutViewModel: ObservableObject {
     func addExercise(_ exercise: Exercise) {
         print("DEBUG: Adding exercise to workout: \(exercise.name)")
         print("DEBUG: Current exercises count: \(exercises.count)")
-        exercises.append(exercise)
+        
+        // Add initial set
+        var exerciseWithSet = exercise
+        exerciseWithSet.sets.append(ExerciseSet(id: UUID().uuidString))
+        
+        exercises.append(exerciseWithSet)
         print("DEBUG: New exercises count: \(exercises.count)")
         
         // Update active workout's exercises
@@ -125,18 +132,52 @@ class WorkoutViewModel: ObservableObject {
         print("DEBUG: Removed exercise: \(exercise.name). Remaining exercises: \(exercises.count)")
     }
     
-    func startRestTimer(seconds: TimeInterval) {
+    func startRestTimer(seconds: TimeInterval, exerciseName: String, setNumber: Int) {
         remainingRestTime = seconds
         currentRestTimer?.invalidate()
         print("DEBUG: Starting rest timer for \(seconds) seconds")
+        
+        if #available(iOS 16.1, *) {
+            // Start live activity
+            let endTime = Date().addingTimeInterval(seconds)
+            let attributes = RestTimerAttributes(exerciseName: exerciseName, setNumber: setNumber)
+            let contentState = RestTimerAttributes.ContentState(
+                endTime: endTime,
+                remainingTime: seconds
+            )
+            
+            Task {
+                do {
+                    restActivity = try await Activity.request(
+                        attributes: attributes,
+                        contentState: contentState,
+                        pushType: nil
+                    )
+                } catch {
+                    print("DEBUG: Error starting live activity: \(error)")
+                }
+            }
+        }
         
         currentRestTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] timer in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 if self.remainingRestTime > 0 {
                     self.remainingRestTime -= 1
+                    
+                    if #available(iOS 16.1, *) {
+                        // Update live activity
+                        let contentState = RestTimerAttributes.ContentState(
+                            endTime: Date().addingTimeInterval(self.remainingRestTime),
+                            remainingTime: self.remainingRestTime
+                        )
+                        await self.restActivity?.update(using: contentState)
+                    }
                 } else {
                     timer.invalidate()
+                    if #available(iOS 16.1, *) {
+                        await self.restActivity?.end(dismissalPolicy: .immediate)
+                    }
                     print("DEBUG: Rest timer completed")
                 }
             }
