@@ -273,6 +273,28 @@ class CommunityViewModel: ObservableObject {
             }
         }
     }
+    
+    func leaveTeam(_ team: Team) async {
+        guard let teamId = team.id else {
+            errorMessage = "Invalid team ID"
+            return
+        }
+        do {
+            try await service.leaveTeam(teamId, userId: userId)
+            await loadData()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    func updateTeam(_ team: Team) async {
+        do {
+            try await service.updateTeam(team)
+            await loadData()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
 // Preview

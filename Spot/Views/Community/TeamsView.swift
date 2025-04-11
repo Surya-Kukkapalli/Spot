@@ -9,9 +9,10 @@ struct TeamsView: View {
         ScrollView {
             VStack(spacing: 24) {
                 // Create Team prompt
-                if viewModel.teams.isEmpty {
-                    createTeamPrompt
-                }
+//                if viewModel.teams.isEmpty {
+//                    createTeamPrompt
+//                }
+                createTeamPrompt
                 
                 // User's teams
                 if !viewModel.teams.isEmpty {
@@ -52,7 +53,7 @@ struct TeamsView: View {
     
     private var createTeamPrompt: some View {
         VStack(spacing: 16) {
-            Image("team_thumbnail") // Add this image to your assets
+            Image("team") 
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(height: 200)

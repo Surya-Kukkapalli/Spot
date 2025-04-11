@@ -266,4 +266,38 @@ class CommunityService {
             }
         }
     }
+    
+    func leaveTeam(_ teamId: String, userId: String) async throws {
+        let ref = db.collection("teams").document(teamId)
+        try await db.runTransaction { transaction, errorPointer in
+            do {
+                let snapshot = try transaction.getDocument(ref)
+                guard var team = try? snapshot.data(as: Team.self) else {
+                    throw NSError(domain: "CommunityService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Team not found"])
+                }
+                
+                // Don't allow creator to leave
+                guard team.creatorId != userId else {
+                    throw NSError(domain: "CommunityService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Team creator cannot leave the team"])
+                }
+                
+                team.members.removeAll { $0 == userId }
+                team.admins.removeAll { $0 == userId }
+                try transaction.setData(from: team, forDocument: ref)
+                return nil
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+    }
+    
+    func updateTeam(_ team: Team) async throws {
+        guard let teamId = team.id else {
+            throw NSError(domain: "CommunityService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Team ID is required"])
+        }
+        try await db.collection("teams")
+            .document(teamId)
+            .setData(from: team)
+    }
 } 

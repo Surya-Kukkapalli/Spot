@@ -7,6 +7,17 @@ struct TeamDetailsView: View {
     @State private var newPost = ""
     @State private var showingImagePicker = false
     @State private var selectedImage: UIImage?
+    @State private var showingTeamSettings = false
+    @State private var showingLeaveConfirmation = false
+    @Environment(\.dismiss) private var dismiss
+    
+    private var isTeamAdmin: Bool {
+        team.isAdmin(viewModel.userId)
+    }
+    
+    private var isTeamCreator: Bool {
+        team.creatorId == viewModel.userId
+    }
     
     var body: some View {
         ScrollView {
@@ -145,6 +156,47 @@ struct TeamDetailsView: View {
                     }
                 }
             }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    if isTeamAdmin {
+                        Button {
+                            showingTeamSettings = true
+                        } label: {
+                            Label("Team Settings", systemImage: "gear")
+                        }
+                        
+                        Divider()
+                    }
+                    
+                    if !isTeamCreator {  // Creator can't leave their own team
+                        Button(role: .destructive) {
+                            showingLeaveConfirmation = true
+                        } label: {
+                            Label("Leave Team", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundColor(.primary)
+                }
+            }
+        }
+        .sheet(isPresented: $showingTeamSettings) {
+            TeamSettingsView(team: team, viewModel: viewModel)
+        }
+        .alert("Leave Team", isPresented: $showingLeaveConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Leave", role: .destructive) {
+                Task {
+                    await viewModel.leaveTeam(team)
+                    dismiss()
+                }
+            }
+        } message: {
+            Text("Are you sure you want to leave this team? You'll need to be invited back to rejoin.")
         }
         .sheet(isPresented: $showingImagePicker) {
             ImagePicker(image: $selectedImage)

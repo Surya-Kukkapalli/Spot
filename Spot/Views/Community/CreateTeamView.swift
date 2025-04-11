@@ -199,7 +199,7 @@ struct CreateTeamFlowView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Public")
                                 .font(.headline)
-                            Text("Anyone on Strava can join your club and view recent activity and content.")
+                            Text("Anyone on Spot can join your club and view recent activity and content.")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }

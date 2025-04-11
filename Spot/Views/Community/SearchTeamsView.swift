@@ -36,10 +36,15 @@ struct SearchTeamsView: View {
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
+            VStack {
+                // Search bar
+                TextField("Search teams", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .padding()
+                
                 // Filter pills
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 8) {
                         ForEach(TeamFilter.allCases, id: \.self) { filter in
                             Button {
                                 selectedFilter = filter
@@ -56,23 +61,13 @@ struct SearchTeamsView: View {
                     }
                     .padding(.horizontal)
                 }
-                .padding(.vertical, 8)
                 
-                Divider()
-                
-                // Teams list
-                List {
-                    ForEach(filteredTeams) { team in
-                        NavigationLink {
-                            TeamDetailsView(team: team, viewModel: viewModel)
-                        } label: {
-                            TeamSearchRow(team: team, viewModel: viewModel)
-                        }
-                    }
+                // Team list
+                List(filteredTeams) { team in
+                    TeamSearchRow(team: team, viewModel: viewModel)
                 }
                 .listStyle(.plain)
             }
-            .searchable(text: $searchText, prompt: "Search teams")
             .navigationTitle("Find Teams")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -95,53 +90,59 @@ struct TeamSearchRow: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            // Team image
-            if let imageUrl = team.imageUrl {
-                AsyncImage(url: URL(string: imageUrl)) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 60, height: 60)
-                        .clipShape(Circle())
-                } placeholder: {
-                    Circle()
-                        .fill(Color.gray.opacity(0.1))
-                        .frame(width: 60, height: 60)
-                }
-            } else {
-                Circle()
-                    .fill(Color.gray.opacity(0.1))
-                    .frame(width: 60, height: 60)
-                    .overlay {
-                        Image(systemName: "person.3.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.gray)
+            NavigationLink {
+                TeamDetailsView(team: team, viewModel: viewModel)
+            } label: {
+                HStack(spacing: 12) {
+                    // Team image
+                    if let imageUrl = team.imageUrl {
+                        AsyncImage(url: URL(string: imageUrl)) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 60, height: 60)
+                                .clipShape(Circle())
+                        } placeholder: {
+                            Circle()
+                                .fill(Color.gray.opacity(0.1))
+                                .frame(width: 60, height: 60)
+                        }
+                    } else {
+                        Circle()
+                            .fill(Color.gray.opacity(0.1))
+                            .frame(width: 60, height: 60)
+                            .overlay {
+                                Image(systemName: "person.3.fill")
+                                    .font(.system(size: 24))
+                                    .foregroundColor(.gray)
+                            }
                     }
-            }
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(team.name)
-                    .font(.headline)
-                
-                Text(team.description)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
-                
-                HStack {
-                    Label("\(team.members.count) Members", systemImage: "person.2")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                     
-                    if !team.tags.isEmpty {
-                        Text("•")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(team.name)
+                            .font(.headline)
+                        
+                        Text(team.description)
+                            .font(.subheadline)
                             .foregroundColor(.secondary)
-                        Text(team.tags.first!)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                        
+                        HStack {
+                            Label("\(team.members.count) Members", systemImage: "person.2")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Text("•")
+                                .foregroundColor(.secondary)
+                            
+                            Text(team.tags.first ?? "")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
             }
+            .buttonStyle(.plain)
             
             Spacer()
             
@@ -155,11 +156,12 @@ struct TeamSearchRow: View {
                         .foregroundColor(.orange)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .overlay {
-                            Capsule()
-                                .strokeBorder(Color.orange, lineWidth: 1)
-                        }
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .stroke(Color.orange, lineWidth: 1)
+                        )
                 }
+                .buttonStyle(.plain)
             }
         }
         .padding(.vertical, 4)
