@@ -1,60 +1,91 @@
 import SwiftUI
-import PhotosUI // Import the PhotosUI framework
+import PhotosUI
 import AVKit
 
 struct VisionView: View {
-    // StateObject creates and manages the lifecycle of the ViewModel
     @StateObject private var viewModel = VisionViewModel()
 
     var body: some View {
-        NavigationView { // Use NavigationView for a title bar
+        NavigationView {
             VStack(spacing: 20) {
-                // Display status messages from the ViewModel
                 Text(viewModel.statusMessage)
-                    .padding()
+                    .padding(.horizontal)
+                    .multilineTextAlignment(.center)
 
-                // Show the selected video (if any) - Placeholder for now
                 if let player = viewModel.videoPlayer {
-                     VideoPlayer(player: player)
-                         .frame(height: 300) // Limit display size
-                 } else {
-                     Image(systemName: "video.slash.fill") // Placeholder icon
-                         .resizable()
-                         .scaledToFit()
-                         .frame(height: 300)
-                         .foregroundColor(.gray)
-                 }
+                    VideoPlayer(player: player)
+                        .frame(height: 300)
+                } else { /* Placeholder */ }
 
-
-                // PhotosPicker for selecting a video
-                // It binds the user's selection to the 'selectedVideoItem' in the ViewModel
                 PhotosPicker(selection: $viewModel.selectedVideoItem, matching: .videos) {
                     Label("Select Exercise Video", systemImage: "video.badge.plus")
                 }
-                .disabled(viewModel.isProcessing) // Disable button while processing
+                .disabled(viewModel.isProcessing)
 
-                // Button to start the analysis
                 Button("Analyze Squat Form") {
                     viewModel.startVideoAnalysis()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(viewModel.selectedVideoItem == nil || viewModel.isProcessing) // Disable if no video or processing
+                .disabled(viewModel.selectedVideoItem == nil || viewModel.isProcessing)
 
-                // Display feedback results
-                if !viewModel.feedbackMessages.isEmpty {
+                // Display feedback results - now using feedbackItems
+                if !viewModel.feedbackItems.isEmpty {
                     List {
                         Section("Form Feedback:") {
-                            ForEach(viewModel.feedbackMessages, id: \.self) { message in
-                                Text(message)
+                            // Iterate over FeedbackItem, identifiable by its id
+                            ForEach(viewModel.feedbackItems, id: \.id) { item in
+                                HStack {
+                                    Text(item.message)
+                                    Spacer()
+                                    // Show chevron if frame is available
+                                    if item.timestamp != nil {
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.gray)
+                                    }
+                                }
+                                .contentShape(Rectangle()) // Make entire row tappable
+                                .onTapGesture {
+                                    // Only trigger if there's a timestamp
+                                    if item.timestamp != nil {
+                                        print("Tapped feedback: \(item.message)")
+                                        viewModel.showFrame(for: item)
+                                    }
+                                }
                             }
                         }
                     }
                 }
 
-                Spacer() // Pushes content to the top
+                Spacer()
             }
-            .navigationTitle("Form Analyzer") // Set the title for the view
-            .padding() // Add padding around the VStack
+            .navigationTitle("Form Analyzer")
+            .padding()
+            // Add the sheet modifier to present the frame
+            .sheet(isPresented: $viewModel.showFrameSheet) {
+                // Content of the sheet
+                VStack {
+                    Text("Relevant Frame")
+                        .font(.headline)
+                        .padding()
+
+                    if let image = viewModel.selectedFrameImage {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .padding()
+                    } else {
+                        // Show loading indicator while frame loads
+                        ProgressView()
+                            .padding()
+                        Text("Loading Frame...")
+                    }
+                    Spacer()
+                    Button("Dismiss") {
+                        viewModel.showFrameSheet = false
+                    }
+                    .padding()
+                }
+            }
         }
     }
 }

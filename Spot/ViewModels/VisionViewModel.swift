@@ -11,13 +11,15 @@ class VisionViewModel: ObservableObject {
     @Published var selectedVideoItem: PhotosPickerItem? {
         // When a new video item is selected...
         didSet {
+            // Clear analysis results and generator when video changes
+             feedbackItems = []
+             poseAnalyzer.cleanupGenerator() // Clean up old generator
+             selectedFrameImage = nil
             if let selectedVideoItem {
-                // Start loading the video data asynchronously
                 loadVideo(from: selectedVideoItem)
-                feedbackMessages = [] // Clear old feedback
             } else {
-                videoURL = nil // Clear URL if item is deselected
-                videoPlayer = nil // Clear player
+                videoURL = nil
+                videoPlayer = nil
                 statusMessage = "Select a video to analyze."
             }
         }
@@ -27,7 +29,12 @@ class VisionViewModel: ObservableObject {
     @Published var videoPlayer: AVPlayer? // AVPlayer to display the video
     @Published var statusMessage: String = "Select a video to analyze."
     @Published var isProcessing: Bool = false // Tracks if analysis is running
-    @Published var feedbackMessages: [String] = [] // Stores the analysis results
+    // Use the new FeedbackItem struct
+    @Published var feedbackItems: [FeedbackItem] = []
+    
+    // State for displaying the selected frame
+    @Published var selectedFrameImage: UIImage? = nil
+    @Published var showFrameSheet: Bool = false // To trigger the modal sheet
 
     // Service responsible for the actual Vision processing and analysis
     // We will define this next (in Step 4 & 5)
@@ -45,8 +52,9 @@ class VisionViewModel: ObservableObject {
 
         isProcessing = true
         statusMessage = "Processing video..."
-        feedbackMessages = [] // Clear previous feedback
-
+        feedbackItems = [] // Clear previous feedback
+        selectedFrameImage = nil // Clear previously shown frame
+        
         // Run the analysis in a background task to avoid blocking the UI
         Task {
             do {
@@ -54,16 +62,42 @@ class VisionViewModel: ObservableObject {
                 let feedback = try await poseAnalyzer.analyzeSquatVideo(url: url)
 
                 // Update UI on the main thread after analysis is done
-                self.feedbackMessages = feedback
-                self.statusMessage = feedback.isEmpty ? "Analysis complete. Looks good!" : "Analysis complete. See feedback below."
+                self.feedbackItems = feedback
+                self.statusMessage = feedback.isEmpty ? "Analysis complete. No issues detected!" : "Analysis complete. Tap feedback for details."
 
             } catch {
                 // Handle errors during analysis
                 self.statusMessage = "Error during analysis: \(error.localizedDescription)"
-                self.feedbackMessages = ["Analysis failed. Please try again."]
+                self.feedbackItems = [FeedbackItem(message: "Analysis failed. Please try again.", frameIndex: nil, timestamp: nil)]
             }
             // Ensure processing state is reset regardless of success or failure
             self.isProcessing = false
+            // Note: We don't call cleanupGenerator here yet, as we might need it
+            // immediately after analysis to show a frame. Clean up on new video selection.
+        }
+    }
+    
+    // Function to load and show a specific frame based on FeedbackItem
+    func showFrame(for feedback: FeedbackItem) {
+        guard let time = feedback.timestamp else {
+            print("No timestamp available for this feedback.")
+            return
+        }
+
+        // Show loading indicator maybe?
+        selectedFrameImage = nil // Clear previous image
+        showFrameSheet = true // Trigger the sheet presentation
+
+        Task {
+            // Fetch the image using the analyzer's helper function
+            let image = await poseAnalyzer.fetchFrameImage(at: time)
+            // Update the image on the main thread
+             self.selectedFrameImage = image
+             if image == nil {
+                 print("Failed to load frame image.")
+                 // Optionally hide sheet or show placeholder in sheet
+                 // self.showFrameSheet = false
+             }
         }
     }
 
