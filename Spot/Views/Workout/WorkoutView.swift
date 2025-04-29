@@ -246,6 +246,8 @@ struct WorkoutExerciseView: View {
     @State private var showingOptions = false
     @State private var isRestTimerActive = false
     @State private var showRestTimerSheet = false
+    @State private var showingDeleteAlert = false
+    @State private var setToDelete: Int?
     
     private var exercise: Exercise {
         guard workoutViewModel.exercises.indices.contains(exerciseIndex) else {
@@ -346,37 +348,39 @@ struct WorkoutExerciseView: View {
                 .padding(.vertical, 8)
                 
                 // Sets List
-                ForEach(exercise.sets.indices, id: \.self) { setIndex in
-                    SetRow(
-                        set: $workoutViewModel.exercises[exerciseIndex].sets[setIndex],
-                        setNumber: setIndex + 1,
-                        previousSet: exercise.previousWorkoutSets?.indices.contains(setIndex) == true ? exercise.previousWorkoutSets?[setIndex] : nil,
-                        onDelete: {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                workoutViewModel.removeSet(from: exerciseIndex, at: setIndex)
+                List {
+                    ForEach(exercise.sets.indices, id: \.self) { setIndex in
+                        SetRow(
+                            set: $workoutViewModel.exercises[exerciseIndex].sets[setIndex],
+                            setNumber: setIndex + 1,
+                            previousSet: exercise.previousWorkoutSets?.indices.contains(setIndex) == true ? exercise.previousWorkoutSets?[setIndex] : nil,
+                            onDelete: {
+                                if workoutViewModel.exercises[exerciseIndex].sets[setIndex].isCompleted {
+                                    setToDelete = setIndex
+                                    showingDeleteAlert = true
+                                } else {
+                                    deleteSet(at: setIndex)
+                                }
+                            },
+                            onDuplicate: {
+                                let set = exercise.sets[setIndex]
+                                var newSet = ExerciseSet(id: UUID().uuidString)
+                                newSet.weight = set.weight
+                                newSet.reps = set.reps
+                                newSet.type = set.type
+                                newSet.restInterval = set.restInterval
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                    workoutViewModel.exercises[exerciseIndex].sets.insert(newSet, at: setIndex + 1)
+                                }
                             }
-                        },
-                        onDuplicate: {
-                            let set = exercise.sets[setIndex]
-                            var newSet = ExerciseSet(id: UUID().uuidString)
-                            newSet.weight = set.weight
-                            newSet.reps = set.reps
-                            newSet.type = set.type
-                            newSet.restInterval = set.restInterval
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                workoutViewModel.exercises[exerciseIndex].sets.insert(newSet, at: setIndex + 1)
-                            }
-                        }
-                    )
-                    .transition(.asymmetric(
-                        insertion: .scale.combined(with: .opacity),
-                        removal: .scale.combined(with: .opacity)
-                    ))
-                    
-                    if setIndex < exercise.sets.count - 1 {
-                        Divider()
+                        )
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                     }
                 }
+                .listStyle(PlainListStyle())
+                .frame(height: CGFloat(exercise.sets.count * 60))
             }
             .background(Color(.systemBackground))
             
@@ -404,6 +408,19 @@ struct WorkoutExerciseView: View {
             insertion: .move(edge: .trailing).combined(with: .opacity),
             removal: .move(edge: .leading).combined(with: .opacity)
         ))
+        .alert("Delete Set?", isPresented: $showingDeleteAlert) {
+            Button("Cancel", role: .cancel) {
+                setToDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                if let index = setToDelete {
+                    deleteSet(at: index)
+                    setToDelete = nil
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete this completed set? This action cannot be undone.")
+        }
         .sheet(isPresented: $showRestTimerSheet) {
             RestTimerSetupView(
                 isPresented: $showRestTimerSheet,
@@ -418,6 +435,12 @@ struct WorkoutExerciseView: View {
                     )
                 }
             )
+        }
+    }
+    
+    private func deleteSet(at index: Int) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+            workoutViewModel.removeSet(from: exerciseIndex, at: index)
         }
     }
 }
