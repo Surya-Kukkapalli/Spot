@@ -343,11 +343,11 @@ struct NavigationGridSection: View {
                 .cornerRadius(10)
             }
             
-            NavigationLink(destination: Text("Analytics Page")) {
+            NavigationLink(destination: Text("Analytics Page - Coming soon")) {
                 VStack {
                     Image(systemName: "chart.bar.fill")
                         .font(.title)
-                    Text("Analytics Page - Coming soon")
+                    Text("Analytics Page")
                 }
                 .frame(maxWidth: .infinity)
                 .padding()

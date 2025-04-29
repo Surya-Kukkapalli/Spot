@@ -350,7 +350,7 @@ struct WorkoutExerciseView: View {
                     SetRow(
                         set: $workoutViewModel.exercises[exerciseIndex].sets[setIndex],
                         setNumber: setIndex + 1,
-                        previousSet: setIndex > 0 ? exercise.sets[setIndex - 1] : nil,
+                        previousSet: exercise.previousWorkoutSets?.indices.contains(setIndex) == true ? exercise.previousWorkoutSets?[setIndex] : nil,
                         onDelete: {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 workoutViewModel.removeSet(from: exerciseIndex, at: setIndex)

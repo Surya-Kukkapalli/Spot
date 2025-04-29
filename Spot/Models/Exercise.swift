@@ -50,8 +50,9 @@ struct Exercise: Identifiable, Codable, Equatable {
     let target: String  // Primary target muscle
     let secondaryMuscles: [String]  // Secondary muscles worked
     var notes: String?
+    var previousWorkoutSets: [ExerciseSet]? // Sets from the last workout
     
-    init(id: String, name: String, sets: [ExerciseSet] = [], equipment: Equipment, gifUrl: String = "", target: String = "", secondaryMuscles: [String] = [], notes: String? = nil) {
+    init(id: String, name: String, sets: [ExerciseSet] = [], equipment: Equipment, gifUrl: String = "", target: String = "", secondaryMuscles: [String] = [], notes: String? = nil, previousWorkoutSets: [ExerciseSet]? = nil) {
         self.id = id
         self.name = name
         self.sets = sets
@@ -60,6 +61,7 @@ struct Exercise: Identifiable, Codable, Equatable {
         self.target = target
         self.secondaryMuscles = secondaryMuscles
         self.notes = notes
+        self.previousWorkoutSets = previousWorkoutSets
     }
     
     init(from template: ExerciseTemplate) {

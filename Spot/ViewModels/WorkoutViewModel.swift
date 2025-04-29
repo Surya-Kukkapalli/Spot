@@ -68,25 +68,78 @@ class WorkoutViewModel: ObservableObject {
         print("DEBUG: Active workout updated successfully")
     }
     
+    private func fetchPreviousWorkoutSets(for exerciseName: String) async -> [ExerciseSet]? {
+        guard let userId = Auth.auth().currentUser?.uid else { return nil }
+        
+        do {
+            // Get the most recent workout containing this exercise
+            let workouts = try await db.collection("workouts")
+                .whereField("userId", isEqualTo: userId)
+                .order(by: "createdAt", descending: true)
+                .getDocuments()
+            
+            for document in workouts.documents {
+                let workoutData = document.data()
+                
+                // Find the exercise in this workout
+                if let exercises = workoutData["exercises"] as? [[String: Any]] {
+                    if let exerciseData = exercises.first(where: { ($0["name"] as? String)?.lowercased() == exerciseName.lowercased() }) {
+                        if let sets = exerciseData["sets"] as? [[String: Any]] {
+                            // Only include completed sets
+                            let completedSets = sets.filter { ($0["isCompleted"] as? Bool) == true }
+                            
+                            // Convert to ExerciseSet objects
+                            return completedSets.compactMap { setData -> ExerciseSet? in
+                                guard let weight = setData["weight"] as? Double,
+                                      let reps = setData["reps"] as? Int else {
+                                    return nil
+                                }
+                                
+                                var set = ExerciseSet(id: UUID().uuidString)
+                                set.weight = weight
+                                set.reps = reps
+                                set.type = .normal
+                                set.isCompleted = true
+                                return set
+                            }
+                        }
+                    }
+                }
+            }
+        } catch {
+            print("DEBUG: Error fetching previous workout data: \(error)")
+        }
+        
+        return nil
+    }
+    
     func addExercise(_ exercise: Exercise) {
-        print("DEBUG: Adding exercise to workout: \(exercise.name)")
-        print("DEBUG: Current exercises count: \(exercises.count)")
-        
-        // Add initial set
-        var exerciseWithSet = exercise
-        exerciseWithSet.sets.append(ExerciseSet(id: UUID().uuidString))
-        
-        exercises.append(exerciseWithSet)
-        print("DEBUG: New exercises count: \(exercises.count)")
-        
-        // Update active workout's exercises
-        if var workout = activeWorkout {
-            print("DEBUG: Updating active workout exercises")
-            workout.exercises = exercises
-            activeWorkout = workout
-            print("DEBUG: Active workout updated with \(workout.exercises.count) exercises")
-        } else {
-            print("DEBUG: Warning: No active workout when adding exercise")
+        Task {
+            print("DEBUG: Adding exercise to workout: \(exercise.name)")
+            print("DEBUG: Current exercises count: \(exercises.count)")
+            
+            // Fetch previous workout data
+            let previousSets = await fetchPreviousWorkoutSets(for: exercise.name)
+            
+            // Add initial set
+            var exerciseWithSet = exercise
+            exerciseWithSet.previousWorkoutSets = previousSets
+            exerciseWithSet.sets.append(ExerciseSet(id: UUID().uuidString))
+            
+            await MainActor.run {
+                exercises.append(exerciseWithSet)
+                print("DEBUG: New exercises count: \(exercises.count)")
+                
+                // Update active workout's exercises
+                if var workout = activeWorkout {
+                    print("DEBUG: Updating active workout exercises")
+                    workout.exercises = exercises
+                    activeWorkout = workout
+                    print("DEBUG: Active workout updated with \(workout.exercises.count) exercises")
+                } else {
+                    print("DEBUG: Warning: No active workout when adding exercise")
+                }
+            }
         }
     }
     
