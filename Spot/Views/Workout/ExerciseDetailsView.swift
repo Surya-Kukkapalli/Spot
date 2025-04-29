@@ -20,7 +20,7 @@ class ExerciseDetailsViewModel: ObservableObject {
     }
     @Published var exerciseData: [(date: Date, value: Double)] = []
     @Published var personalRecords: [String: PersonalRecord] = [:]
-    @Published var isLoading = false
+    @Published var isLoading = true
     @Published var error: String?
     @Published var exerciseDetails: ExerciseTemplate?
     
@@ -269,12 +269,9 @@ struct ExerciseDetailsView: View {
     let exercise: ExerciseTemplate
     @StateObject private var viewModel: ExerciseDetailsViewModel
     @State private var selectedTab = 0
+    @State private var isLoading = true
     
     init(exercise: ExerciseTemplate) {
-//        print("DEBUG: Initializing ExerciseDetailsView with exercise:")
-//        print("DEBUG: - Name: \(exercise.name)")
-//        print("DEBUG: - GifUrl: \(exercise.gifUrl)")
-//        print("DEBUG: - Instructions count: \(exercise.instructions.count)")
         self.exercise = exercise
         _viewModel = StateObject(wrappedValue: ExerciseDetailsViewModel(exercise: exercise))
     }
@@ -284,21 +281,39 @@ struct ExerciseDetailsView: View {
             VStack(spacing: 0) {
                 TabBar(selectedTab: $selectedTab)
                 
-                switch selectedTab {
-                case 0:
-                    SummaryTab(exercise: exercise, viewModel: viewModel)
-                case 1:
-                    HistoryTab(viewModel: viewModel)
-                case 2:
-                    HowToTab(exercise: exercise, viewModel: viewModel)
-                case 3:
-                    LeaderboardTab(exercise: exercise)
-                default:
-                    EmptyView()
+                if isLoading {
+                    VStack {
+                        ProgressView()
+                            .padding(.top, 100)
+                        Text("Loading exercise details...")
+                            .foregroundColor(.secondary)
+                            .padding(.top, 8)
+                    }
+                } else {
+                    switch selectedTab {
+                    case 0:
+                        SummaryTab(exercise: exercise, viewModel: viewModel)
+                    case 1:
+                        HistoryTab(viewModel: viewModel)
+                    case 2:
+                        HowToTab(exercise: exercise, viewModel: viewModel)
+                    case 3:
+                        LeaderboardTab(exercise: exercise)
+                    default:
+                        EmptyView()
+                    }
                 }
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            // Simulate loading delay for smoother transition
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                withAnimation {
+                    isLoading = false
+                }
+            }
+        }
     }
 }
 

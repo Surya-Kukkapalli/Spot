@@ -76,7 +76,7 @@ struct SaveWorkoutView: View {
             .navigationTitle("Save Workout")
             .navigationBarItems(
                 leading: Button("Cancel") {
-                    showingDiscardAlert = true
+                    dismiss()
                 },
                 trailing: Button("Save") {
                     print("DEBUG: Save button pressed")
@@ -100,14 +100,6 @@ struct SaveWorkoutView: View {
                 }
                 .disabled(workoutTitle.isEmpty)
             )
-            .alert("Discard Workout?", isPresented: $showingDiscardAlert) {
-                Button("Cancel", role: .cancel) { }
-                Button("Discard", role: .destructive) {
-                    dismiss()
-                }
-            } message: {
-                Text("Are you sure you want to discard this workout? This action cannot be undone.")
-            }
         }
     }
     

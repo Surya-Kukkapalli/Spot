@@ -347,7 +347,7 @@ struct NavigationGridSection: View {
                 VStack {
                     Image(systemName: "chart.bar.fill")
                         .font(.title)
-                    Text("Analytics Page")
+                    Text("Analytics Page - Coming soon")
                 }
                 .frame(maxWidth: .infinity)
                 .padding()

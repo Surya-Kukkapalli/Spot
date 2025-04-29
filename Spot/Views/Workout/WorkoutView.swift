@@ -75,6 +75,7 @@ private struct ActiveWorkoutView: View {
     @Binding var showExerciseSearch: Bool
     @Binding var showSaveWorkout: Bool
     @Environment(\.dismiss) private var dismiss
+    @State private var showingDiscardAlert = false
     
     var body: some View {
         ScrollView {
@@ -87,26 +88,41 @@ private struct ActiveWorkoutView: View {
                 }
                 .padding(.top)
                 
-                if viewModel.exercises.isEmpty {
-                    // Empty State
-                    EmptyWorkoutView(showExerciseSearch: $showExerciseSearch)
-                        .padding(.vertical, 40)
-                } else {
-                    // Exercise List
-                    LazyVStack(spacing: 16) {
-                        ForEach(Array(viewModel.exercises.enumerated()), id: \.element.id) { index, exercise in
+                // Exercise List
+                LazyVStack(spacing: 16) {
+                    ForEach(Array(viewModel.exercises.enumerated()), id: \.element.id) { index, exercise in
+                        VStack {
                             WorkoutExerciseView(workoutViewModel: viewModel, exerciseIndex: index)
                                 .padding(.horizontal)
                         }
+                        .transition(.opacity.combined(with: .slide))
                     }
                 }
+                
+                // Add Exercise Button
+                Button {
+                    showExerciseSearch = true
+                } label: {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add Exercise")
+                    }
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button {
-                    dismiss()
+                    showingDiscardAlert = true
                 } label: {
                     Image(systemName: "chevron.left")
                 }
@@ -120,12 +136,6 @@ private struct ActiveWorkoutView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack {
                     Button {
-                        //showRestTimerSheet = true
-                    } label: {
-                        Image(systemName: "timer")
-                    }
-                    
-                    Button {
                         showSaveWorkout = true
                     } label: {
                         Text("Finish")
@@ -138,6 +148,17 @@ private struct ActiveWorkoutView: View {
                     }
                 }
             }
+        }
+        .alert("Discard Workout?", isPresented: $showingDiscardAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Discard", role: .destructive) {
+                Task {
+                    await viewModel.discardWorkout()
+                    dismiss()
+                }
+            }
+        } message: {
+            Text("Are you sure you want to discard this workout? This action cannot be undone.")
         }
         .onAppear {
             print("DEBUG: ActiveWorkoutView appeared")
@@ -244,16 +265,22 @@ struct WorkoutExerciseView: View {
                 }
                 .frame(width: 40, height: 40)
                 .cornerRadius(8)
+                .transition(.scale.combined(with: .opacity))
                 
-                HStack(spacing: 4) {
-                    Text(exercise.name)
-                        .font(.system(.title3, design: .rounded))
-                        .foregroundColor(.blue)
-                    
-                    Text("(\(exercise.equipment.description))")
-                        .font(.system(.title3, design: .rounded))
-                        .foregroundColor(.secondary)
+                NavigationLink(destination: ExerciseDetailsView(exercise: exercise.toTemplate())) {
+                    HStack(spacing: 4) {
+                        Text(exercise.name.capitalized)
+                            .font(.system(.title3, design: .rounded))
+                            .foregroundColor(.blue)
+                            .multilineTextAlignment(.leading)
+                        
+                        // For now, we don't want the equipment type
+//                        Text("(\(exercise.equipment.description.capitalized))")
+//                            .font(.system(.title3, design: .rounded))
+//                            .foregroundColor(.secondary)
+                    }
                 }
+                .transition(.move(edge: .leading).combined(with: .opacity))
                 
                 Spacer()
                 
@@ -265,7 +292,7 @@ struct WorkoutExerciseView: View {
                     }
                     
                     Button(role: .destructive) {
-                        withAnimation {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             workoutViewModel.removeExercise(at: exerciseIndex)
                         }
                     } label: {
@@ -285,6 +312,7 @@ struct WorkoutExerciseView: View {
             ))
             .font(.system(.body, design: .rounded))
             .foregroundColor(.secondary)
+            .transition(.move(edge: .trailing).combined(with: .opacity))
             
             // Rest Timer Status
             Button {
@@ -297,6 +325,7 @@ struct WorkoutExerciseView: View {
                         .foregroundColor(.blue)
                 }
             }
+            .transition(.scale.combined(with: .opacity))
             
             // Sets Section
             VStack(spacing: 0) {
@@ -323,7 +352,9 @@ struct WorkoutExerciseView: View {
                         setNumber: setIndex + 1,
                         previousSet: setIndex > 0 ? exercise.sets[setIndex - 1] : nil,
                         onDelete: {
-                            workoutViewModel.removeSet(from: exerciseIndex, at: setIndex)
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                workoutViewModel.removeSet(from: exerciseIndex, at: setIndex)
+                            }
                         },
                         onDuplicate: {
                             let set = exercise.sets[setIndex]
@@ -332,9 +363,15 @@ struct WorkoutExerciseView: View {
                             newSet.reps = set.reps
                             newSet.type = set.type
                             newSet.restInterval = set.restInterval
-                            workoutViewModel.exercises[exerciseIndex].sets.insert(newSet, at: setIndex + 1)
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                workoutViewModel.exercises[exerciseIndex].sets.insert(newSet, at: setIndex + 1)
+                            }
                         }
                     )
+                    .transition(.asymmetric(
+                        insertion: .scale.combined(with: .opacity),
+                        removal: .scale.combined(with: .opacity)
+                    ))
                     
                     if setIndex < exercise.sets.count - 1 {
                         Divider()
@@ -345,7 +382,7 @@ struct WorkoutExerciseView: View {
             
             // Add Set Button
             Button {
-                withAnimation {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     workoutViewModel.addSet(to: exerciseIndex)
                 }
             } label: {
@@ -363,6 +400,10 @@ struct WorkoutExerciseView: View {
         }
         .padding()
         .background(Color(.systemBackground))
+        .transition(.asymmetric(
+            insertion: .move(edge: .trailing).combined(with: .opacity),
+            removal: .move(edge: .leading).combined(with: .opacity)
+        ))
         .sheet(isPresented: $showRestTimerSheet) {
             RestTimerSetupView(
                 isPresented: $showRestTimerSheet,
@@ -482,3 +523,4 @@ struct SetRow: View {
 #Preview {
     WorkoutView()
 } 
+

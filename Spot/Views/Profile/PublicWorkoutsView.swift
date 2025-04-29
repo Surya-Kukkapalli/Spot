@@ -21,7 +21,7 @@ struct PublicWorkoutsView: View {
             }
             .padding(.vertical)
         }
-        .navigationTitle("Public Workout Templates")
+        .navigationTitle("Public Workouts")
         .sheet(item: $selectedTemplate) { template in
             NavigationStack {
                 WorkoutTemplateDetailView(template: template, mode: .copy)

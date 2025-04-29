@@ -108,6 +108,19 @@ struct Exercise: Identifiable, Codable, Equatable {
                lhs.secondaryMuscles == rhs.secondaryMuscles &&
                lhs.notes == rhs.notes
     }
+    
+    func toTemplate() -> ExerciseTemplate {
+        return ExerciseTemplate(
+            id: id,
+            name: name,
+            bodyPart: target, // Using target as bodyPart since they're related
+            equipment: equipment.description,
+            gifUrl: gifUrl,
+            target: target,
+            secondaryMuscles: secondaryMuscles,
+            instructions: [] // Instructions are typically loaded from the API
+        )
+    }
 }
 
 // Exercise Set model
