@@ -9,7 +9,7 @@ struct ContentView: View {
                 MainTabView()
                     .environmentObject(authViewModel)
             } else {
-                LoginView()
+                OnboardingView()
                     .environmentObject(authViewModel)
             }
         }

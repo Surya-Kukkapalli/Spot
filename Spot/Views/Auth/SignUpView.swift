@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SignUpView: View {
-    @StateObject private var viewModel = AuthViewModel()
+    @EnvironmentObject var viewModel: AuthViewModel
     @Environment(\.dismiss) private var dismiss
     
     @State private var email = ""
@@ -13,32 +13,33 @@ struct SignUpView: View {
     @State private var errorMessage = ""
     
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Create Account")
-                .font(.largeTitle)
-                .bold()
-                .padding(.top, 50)
-            
-            VStack(spacing: 20) {
-                TextField("First Name", text: $firstName)
-                    .textFieldStyle(.roundedBorder)
+        VStack(spacing: 24) {
+            // Header
+            VStack(spacing: 8) {
+                Text("Create Account")
+                    .font(.system(size: 32, weight: .bold))
                 
-                TextField("Last Name", text: $lastName)
-                    .textFieldStyle(.roundedBorder)
-                
-                TextField("Username", text: $username)
-                    .textFieldStyle(.roundedBorder)
-                    .textInputAutocapitalization(.never)
-                
-                TextField("Email", text: $email)
-                    .textFieldStyle(.roundedBorder)
-                    .textInputAutocapitalization(.never)
-                
-                SecureField("Password", text: $password)
-                    .textFieldStyle(.roundedBorder)
+                Text("Join the community and start your fitness journey")
+                    .font(.body)
+                    .foregroundColor(.gray)
+                    .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 32)
+            .padding(.top, 60)
+            .padding(.bottom, 20)
             
+            // Form Fields
+            VStack(spacing: 16) {
+                FormField(title: "First Name", text: $firstName, icon: "person.fill")
+                FormField(title: "Last Name", text: $lastName, icon: "person.fill")
+                FormField(title: "Username", text: $username, icon: "at", autocapitalization: .never)
+                FormField(title: "Email", text: $email, icon: "envelope.fill", autocapitalization: .never)
+                FormField(title: "Password", text: $password, icon: "lock.fill", isSecure: true)
+            }
+            .padding(.horizontal, 24)
+            
+            Spacer()
+            
+            // Sign Up Button
             Button {
                 Task {
                     do {
@@ -49,25 +50,24 @@ struct SignUpView: View {
                             firstName: firstName,
                             lastName: lastName
                         )
-                        dismiss()
                     } catch {
                         errorMessage = error.localizedDescription
                         showAlert = true
                     }
                 }
             } label: {
-                Text("Sign Up")
+                Text("Create Account")
                     .font(.headline)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(Color.blue)
-                    .cornerRadius(10)
-                    .padding(.horizontal, 32)
+                    .frame(height: 56)
+                    .background(Color.red)
+                    .cornerRadius(12)
             }
-            
-            Spacer()
+            .padding(.horizontal, 24)
+            .padding(.bottom, 32)
         }
+        .navigationBarBackButtonHidden(false)
         .alert("Error", isPresented: $showAlert) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -76,8 +76,39 @@ struct SignUpView: View {
     }
 }
 
+struct FormField: View {
+    let title: String
+    @Binding var text: String
+    let icon: String
+    var isSecure: Bool = false
+    var autocapitalization: TextInputAutocapitalization = .words
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundColor(.gray)
+                .frame(width: 24)
+            
+            if isSecure {
+                SecureField(title, text: $text)
+                    .textContentType(.password)
+            } else {
+                TextField(title, text: $text)
+                    .textInputAutocapitalization(autocapitalization)
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.systemGray6))
+        )
+    }
+}
+
 #Preview {
-    SignUpView()
-        .environmentObject(AuthViewModel())
+    NavigationStack {
+        SignUpView()
+            .environmentObject(AuthViewModel())
+    }
 } 
 
