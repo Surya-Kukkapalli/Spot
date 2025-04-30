@@ -275,11 +275,6 @@ struct WorkoutExerciseView: View {
                             .font(.system(.title3, design: .rounded))
                             .foregroundColor(.blue)
                             .multilineTextAlignment(.leading)
-                        
-                        // For now, we don't want the equipment type
-//                        Text("(\(exercise.equipment.description.capitalized))")
-//                            .font(.system(.title3, design: .rounded))
-//                            .foregroundColor(.secondary)
                     }
                 }
                 .transition(.move(edge: .leading).combined(with: .opacity))
@@ -306,6 +301,7 @@ struct WorkoutExerciseView: View {
                         .padding(8)
                 }
             }
+            .padding(.horizontal)
             
             // Notes TextField
             TextField("Add notes here...", text: Binding(
@@ -314,6 +310,7 @@ struct WorkoutExerciseView: View {
             ))
             .font(.system(.body, design: .rounded))
             .foregroundColor(.secondary)
+            .padding(.horizontal)
             .transition(.move(edge: .trailing).combined(with: .opacity))
             
             // Rest Timer Status
@@ -327,6 +324,7 @@ struct WorkoutExerciseView: View {
                         .foregroundColor(.blue)
                 }
             }
+            .padding(.horizontal)
             .transition(.scale.combined(with: .opacity))
             
             // Sets Section
@@ -346,6 +344,7 @@ struct WorkoutExerciseView: View {
                 .font(.system(.caption, design: .rounded))
                 .foregroundColor(.secondary)
                 .padding(.vertical, 8)
+                .padding(.horizontal, 16)
                 
                 // Sets List
                 List {
@@ -382,7 +381,6 @@ struct WorkoutExerciseView: View {
                 .listStyle(PlainListStyle())
                 .frame(height: CGFloat(exercise.sets.count * 60))
             }
-            .background(Color(.systemBackground))
             
             // Add Set Button
             Button {
@@ -401,8 +399,8 @@ struct WorkoutExerciseView: View {
                 .background(Color(.systemGray6))
                 .cornerRadius(8)
             }
+            .padding(.horizontal)
         }
-        .padding()
         .background(Color(.systemBackground))
         .transition(.asymmetric(
             insertion: .move(edge: .trailing).combined(with: .opacity),
@@ -460,7 +458,7 @@ struct SetRow: View {
         HStack {
             Text("\(setNumber)")
                 .frame(width: 40, alignment: .leading)
-                .foregroundColor(.secondary)
+                .foregroundColor(set.isCompleted ? .white : .secondary)
             
             if let previous = previousSet {
                 Button {
@@ -470,12 +468,12 @@ struct SetRow: View {
                     set.reps = previous.reps
                 } label: {
                     Text("\(Int(previous.weight))×\(previous.reps)")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(set.isCompleted ? .white : .secondary)
                 }
                 .frame(width: 80, alignment: .leading)
             } else {
                 Text("-")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(set.isCompleted ? .white : .secondary)
                     .frame(width: 80, alignment: .leading)
             }
             
@@ -490,10 +488,11 @@ struct SetRow: View {
                         }
                     }
                     .frame(width: 50)
+                    .foregroundColor(set.isCompleted ? .white : .primary)
                 
                 Text("lbs")
                     .font(.system(.caption, design: .rounded))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(set.isCompleted ? .white : .secondary)
             }
             .frame(width: 80)
             
@@ -507,6 +506,7 @@ struct SetRow: View {
                     }
                 }
                 .frame(width: 60)
+                .foregroundColor(set.isCompleted ? .white : .primary)
             
             Spacer()
             
@@ -517,11 +517,29 @@ struct SetRow: View {
             } label: {
                 Image(systemName: set.isCompleted ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 22))
-                    .foregroundColor(set.isCompleted ? .green : .gray.opacity(0.3))
+                    .foregroundColor(set.isCompleted ? .white : .gray.opacity(0.3))
             }
         }
         .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity)
+        .background(
+            ZStack {
+                if setNumber.isMultiple(of: 2) {
+                    Color(.systemGray6)
+                        .cornerRadius(8)
+                }
+                if set.isCompleted {
+                    Color(red: 76/255, green: 217/255, blue: 100/255) // iOS system green
+                        .opacity(0.75)
+                        .cornerRadius(8)
+                        .transition(.opacity)
+                }
+            }
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
         .listRowInsets(EdgeInsets())
+        .listRowSeparator(.hidden)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
                 onDelete()
