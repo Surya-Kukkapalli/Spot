@@ -43,14 +43,6 @@ struct CommunityView: View {
             .navigationTitle("Community")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        // Search functionality
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                    }
-                }
-                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack {
                         Button {
@@ -179,6 +171,13 @@ class CommunityViewModel: ObservableObject {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+    
+    func createChallengeAndJoin(_ challenge: Challenge) async throws {
+        try await service.createChallenge(challenge)
+        // Calculate initial progress for the creator
+        try await service.joinChallenge(challenge.id, userId: userId)
+        await loadData()
     }
     
     func createTeam(_ team: Team) {

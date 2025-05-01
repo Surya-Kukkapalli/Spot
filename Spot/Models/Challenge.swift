@@ -36,21 +36,34 @@ struct Challenge: Identifiable, Codable {
     }
     
     enum ChallengeType: String, Codable, CaseIterable {
-        case distance
         case volume
-        case duration
-        case count
+        case time
+        case oneRepMax = "one_rep_max"
+        case personalRecord = "personal_record"
         
         var iconName: String {
             switch self {
-            case .distance:
-                return "figure.walk"
             case .volume:
                 return "dumbbell.fill"
-            case .duration:
+            case .time:
                 return "clock"
-            case .count:
-                return "number"
+            case .oneRepMax:
+                return "figure.strengthtraining.traditional"
+            case .personalRecord:
+                return "trophy.fill"
+            }
+        }
+        
+        var displayName: String {
+            switch self {
+            case .volume:
+                return "Volume"
+            case .time:
+                return "Time"
+            case .oneRepMax:
+                return "One Rep Max"
+            case .personalRecord:
+                return "Personal Record"
             }
         }
     }
@@ -84,7 +97,9 @@ struct Challenge: Identifiable, Codable {
         self.bannerImageUrl = bannerImageUrl
         self.callToAction = callToAction
         self.qualifyingMuscles = qualifyingMuscles
-        self.participants = participants
+        var allParticipants = Set(participants)
+        allParticipants.insert(creatorId)
+        self.participants = Array(allParticipants)
         self.completions = completions
         self.organizer = organizer
     }

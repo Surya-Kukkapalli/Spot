@@ -14,17 +14,17 @@ class ChallengeProgressService {
         
         // Calculate progress based on challenge type
         switch challenge.type {
-        case .distance:
-            return calculateDistanceProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
-            
         case .volume:
             return calculateVolumeProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
             
-        case .duration:
+        case .time:
             return calculateDurationProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
             
-        case .count:
-            return calculateCountProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
+        case .oneRepMax:
+            return calculateOneRepMaxProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
+            
+        case .personalRecord:
+            return calculatePersonalRecordProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
         }
     }
     
@@ -58,21 +58,21 @@ class ChallengeProgressService {
             var progress: Double = 0
             
             switch challenge.type {
-            case .distance:
-                progress = calculateDistanceProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
-                print("DEBUG: Calculated distance progress: \(progress)")
-                
             case .volume:
                 progress = calculateVolumeProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
                 print("DEBUG: Calculated volume progress: \(progress)")
                 
-            case .duration:
+            case .time:
                 progress = calculateDurationProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
                 print("DEBUG: Calculated duration progress: \(progress)")
                 
-            case .count:
-                progress = calculateCountProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
-                print("DEBUG: Calculated count progress: \(progress)")
+            case .oneRepMax:
+                progress = calculateOneRepMaxProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
+                print("DEBUG: Calculated one rep max progress: \(progress)")
+                
+            case .personalRecord:
+                progress = calculatePersonalRecordProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
+                print("DEBUG: Calculated personal record progress: \(progress)")
             }
             
             // If there's progress to add, update the challenge
@@ -99,12 +99,6 @@ class ChallengeProgressService {
                 print("DEBUG: No progress to add for this challenge")
             }
         }
-    }
-    
-    private func calculateDistanceProgress(from workout: WorkoutSummary, qualifyingMuscles: [String]) -> Double {
-        // For now, we'll use a placeholder calculation
-        // In a real app, you'd need to track actual distance metrics
-        return 0
     }
     
     private func calculateVolumeProgress(from workout: WorkoutSummary, qualifyingMuscles: [String]) -> Double {
@@ -149,16 +143,124 @@ class ChallengeProgressService {
         return 0
     }
     
-    private func calculateCountProgress(from workout: WorkoutSummary, qualifyingMuscles: [String]) -> Double {
+    private func calculateOneRepMaxProgress(from workout: WorkoutSummary, qualifyingMuscles: [String]) -> Double {
+        print("DEBUG: Calculating one rep max progress")
+        print("DEBUG: Qualifying muscles: \(qualifyingMuscles)")
+        
+        // If no qualifying muscles specified, find the highest 1RM across all exercises
         if qualifyingMuscles.isEmpty {
-            return 1 // Count the whole workout
+            let maxOneRepMax = workout.exercises.reduce(0.0) { currentMax, exercise in
+                let exerciseOneRepMax = exercise.sets.reduce(0.0) { setMax, set in
+                    // Using Brzycki formula: 1RM = weight × (36 / (37 - reps))
+                    if set.reps > 0 {
+                        let oneRepMax = Double(set.weight) * (36.0 / (37.0 - Double(set.reps)))
+                        return max(setMax, oneRepMax)
+                    }
+                    return setMax
+                }
+                return max(currentMax, exerciseOneRepMax)
+            }
+            print("DEBUG: No qualifying muscles specified, using highest 1RM: \(maxOneRepMax)")
+            return maxOneRepMax
         }
         
-        // Check if any exercise qualifies
-        return workout.exercises.contains { exercise in
-            let muscles = Set([exercise.targetMuscle])
-            return !Set(qualifyingMuscles).isDisjoint(with: muscles)
-        } ? 1 : 0
+        // Find highest 1RM among qualifying exercises
+        let qualifyingMusclesSet = Set(qualifyingMuscles)
+        var highestOneRepMax = 0.0
+        
+        for exercise in workout.exercises {
+            if qualifyingMusclesSet.contains(exercise.targetMuscle) {
+                let exerciseOneRepMax = exercise.sets.reduce(0.0) { setMax, set in
+                    if set.reps > 0 {
+                        let oneRepMax = Double(set.weight) * (36.0 / (37.0 - Double(set.reps)))
+                        return max(setMax, oneRepMax)
+                    }
+                    return setMax
+                }
+                highestOneRepMax = max(highestOneRepMax, exerciseOneRepMax)
+                print("DEBUG: Exercise '\(exercise.exerciseName)' qualifies. 1RM: \(exerciseOneRepMax)")
+            }
+        }
+        
+        print("DEBUG: Highest qualifying 1RM: \(highestOneRepMax)")
+        return highestOneRepMax
+    }
+    
+    private func calculatePersonalRecordProgress(from workout: WorkoutSummary, qualifyingMuscles: [String]) -> Double {
+        print("DEBUG: Calculating personal record progress")
+        print("DEBUG: Qualifying muscles: \(qualifyingMuscles)")
+        
+        // Count PRs set in this workout that match qualifying muscles
+        var prCount = 0
+        
+        for exercise in workout.exercises {
+            // Skip if exercise doesn't match qualifying muscles (when specified)
+            if !qualifyingMuscles.isEmpty && !qualifyingMuscles.contains(exercise.targetMuscle) {
+                continue
+            }
+            
+            // Find the highest one rep max for this exercise in this workout
+            let currentOneRepMax = exercise.sets.reduce(0.0) { maxSoFar, set in
+                let setOneRepMax = calculateBrzyckiOneRepMax(weight: Double(set.weight), reps: set.reps)
+                return max(maxSoFar, setOneRepMax)
+            }
+            
+            // If this is higher than any previous workout's one rep max for this exercise,
+            // count it as a PR
+            if currentOneRepMax > 0 {
+                Task {
+                    if try await isPR(oneRepMax: currentOneRepMax, 
+                                    exerciseName: exercise.exerciseName,
+                                    targetMuscle: exercise.targetMuscle,
+                                    userId: workout.userId,
+                                    beforeDate: workout.createdAt) {
+                        prCount += 1
+                        print("DEBUG: Found PR in exercise '\(exercise.exerciseName)' - 1RM: \(currentOneRepMax)")
+                    }
+                }
+            }
+        }
+        
+        print("DEBUG: Total PRs in workout: \(prCount)")
+        return Double(prCount)
+    }
+    
+    private func isPR(oneRepMax: Double, 
+                     exerciseName: String,
+                     targetMuscle: String,
+                     userId: String,
+                     beforeDate: Date) async throws -> Bool {
+        // Get user's exercise history before this workout
+        let snapshot = try await db.collection("workoutSummaries")
+            .whereField("userId", isEqualTo: userId)
+            .whereField("createdAt", isLessThan: beforeDate)
+            .getDocuments()
+        
+        // Convert to WorkoutSummary objects
+        let workouts = try snapshot.documents.compactMap { try $0.data(as: WorkoutSummary.self) }
+        
+        // Get all sets for this exercise
+        let previousSets = workouts.flatMap { workout in
+            workout.exercises
+                .filter { $0.exerciseName == exerciseName && $0.targetMuscle == targetMuscle }
+                .flatMap { $0.sets }
+        }
+        
+        // Calculate previous best one rep max
+        let previousBest = previousSets.map { set in
+            calculateBrzyckiOneRepMax(weight: Double(set.weight), reps: set.reps)
+        }.max() ?? 0
+        
+        return oneRepMax > previousBest
+    }
+    
+    private func calculateBrzyckiOneRepMax(weight: Double, reps: Int) -> Double {
+        // Brzycki formula: 1RM = weight × (36 / (37 - reps))
+        // Only calculate if reps are in a reasonable range (1-10 is most accurate)
+        if reps > 0 && reps <= 10 {
+            return weight * (36.0 / (37.0 - Double(reps)))
+        }
+        return 0
     }
     
     private func addChallengeToTrophyCase(_ challenge: Challenge, userId: String) async throws {
