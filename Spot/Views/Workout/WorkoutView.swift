@@ -346,60 +346,67 @@ struct WorkoutExerciseView: View {
                 .padding(.vertical, 8)
                 .padding(.horizontal, 16)
                 
-                // Sets List
-                List {
-                    ForEach(exercise.sets.indices, id: \.self) { setIndex in
-                        SetRow(
-                            set: $workoutViewModel.exercises[exerciseIndex].sets[setIndex],
-                            setNumber: setIndex + 1,
-                            previousSet: exercise.previousWorkoutSets?.indices.contains(setIndex) == true ? exercise.previousWorkoutSets?[setIndex] : nil,
-                            onDelete: {
-                                if workoutViewModel.exercises[exerciseIndex].sets[setIndex].isCompleted {
-                                    setToDelete = setIndex
-                                    showingDeleteAlert = true
-                                } else {
-                                    deleteSet(at: setIndex)
+                // Container for List and Add Set button
+                VStack(spacing: 8) {
+                    // Sets List with fixed size
+                    List {
+                        ForEach(exercise.sets.indices, id: \.self) { setIndex in
+                            SetRow(
+                                set: $workoutViewModel.exercises[exerciseIndex].sets[setIndex],
+                                setNumber: setIndex + 1,
+                                previousSet: exercise.previousWorkoutSets?.indices.contains(setIndex) == true ? exercise.previousWorkoutSets?[setIndex] : nil,
+                                onDelete: {
+                                    if workoutViewModel.exercises[exerciseIndex].sets[setIndex].isCompleted {
+                                        setToDelete = setIndex
+                                        showingDeleteAlert = true
+                                    } else {
+                                        deleteSet(at: setIndex)
+                                    }
+                                },
+                                onDuplicate: {
+                                    let set = exercise.sets[setIndex]
+                                    var newSet = ExerciseSet(id: UUID().uuidString)
+                                    newSet.weight = set.weight
+                                    newSet.reps = set.reps
+                                    newSet.type = set.type
+                                    newSet.restInterval = set.restInterval
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                        workoutViewModel.exercises[exerciseIndex].sets.insert(newSet, at: setIndex + 1)
+                                    }
                                 }
-                            },
-                            onDuplicate: {
-                                let set = exercise.sets[setIndex]
-                                var newSet = ExerciseSet(id: UUID().uuidString)
-                                newSet.weight = set.weight
-                                newSet.reps = set.reps
-                                newSet.type = set.type
-                                newSet.restInterval = set.restInterval
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    workoutViewModel.exercises[exerciseIndex].sets.insert(newSet, at: setIndex + 1)
-                                }
-                            }
-                        )
-                        .listRowInsets(EdgeInsets())
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
+                            )
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .padding(.vertical, 2)
+                        }
                     }
+                    .listStyle(PlainListStyle())
+                    .frame(height: CGFloat(exercise.sets.count * 56))
+                    .background(Color(.systemBackground))
+                    
+                    // Add Set Button
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            workoutViewModel.addSet(to: exerciseIndex)
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "plus")
+                            Text("Add Set")
+                        }
+                        .font(.system(.body, design: .rounded))
+                        .foregroundColor(.blue)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                    }
+                    .padding(.horizontal)
                 }
-                .listStyle(PlainListStyle())
-                .frame(height: CGFloat(exercise.sets.count * 60))
             }
-            
-            // Add Set Button
-            Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    workoutViewModel.addSet(to: exerciseIndex)
-                }
-            } label: {
-                HStack {
-                    Image(systemName: "plus")
-                    Text("Add Set")
-                }
-                .font(.system(.body, design: .rounded))
-                .foregroundColor(.blue)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color(.systemGray6))
-                .cornerRadius(8)
-            }
-            .padding(.horizontal)
+            .background(Color(.systemBackground))
+            .frame(maxHeight: .infinity, alignment: .top)
         }
         .background(Color(.systemBackground))
         .transition(.asymmetric(
