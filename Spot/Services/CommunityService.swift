@@ -300,4 +300,54 @@ class CommunityService {
             .document(teamId)
             .setData(from: team)
     }
+    
+    // MARK: - User Profiles
+    
+    func getUserProfiles(userIds: [String]) async throws -> [(id: String, username: String, profileImageUrl: String?)] {
+        let snapshot = try await db.collection("users")
+            .whereField(FieldPath.documentID(), in: userIds)
+            .getDocuments()
+        
+        return snapshot.documents.compactMap { doc in
+            guard let username = doc.data()["username"] as? String else { return nil }
+            let profileImageUrl = doc.data()["profileImageUrl"] as? String
+            return (id: doc.documentID, username: username, profileImageUrl: profileImageUrl)
+        }
+    }
+    
+    // MARK: - Comments
+    
+    func addComment(to challengeId: String, comment: Challenge.Comment) async throws {
+        let ref = db.collection("challenges").document(challengeId)
+        try await db.runTransaction { transaction, errorPointer in
+            do {
+                let snapshot = try transaction.getDocument(ref)
+                guard var challenge = try? snapshot.data(as: Challenge.self) else {
+                    throw NSError(domain: "CommunityService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Challenge not found"])
+                }
+                
+                challenge.comments.append(comment)
+                try transaction.setData(from: challenge, forDocument: ref)
+                return nil
+            } catch {
+                errorPointer?.pointee = error as NSError
+                return nil
+            }
+        }
+    }
+    
+    // MARK: - User Activities
+    
+    func getUserWorkouts(userId: String, startDate: Date, endDate: Date) async throws -> [WorkoutSummary] {
+        let snapshot = try await db.collection("workoutSummaries")
+            .whereField("userId", isEqualTo: userId)
+            .whereField("createdAt", isGreaterThanOrEqualTo: startDate)
+            .whereField("createdAt", isLessThanOrEqualTo: endDate)
+            .order(by: "createdAt", descending: true)
+            .getDocuments()
+        
+        return try snapshot.documents.compactMap { doc in
+            try doc.data(as: WorkoutSummary.self)
+        }
+    }
 } 

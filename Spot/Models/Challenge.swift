@@ -6,6 +6,7 @@ struct Challenge: Identifiable, Codable {
     let title: String
     let description: String
     let type: ChallengeType
+    let scope: ChallengeScope
     let goal: Double
     let unit: String
     let startDate: Date
@@ -18,6 +19,16 @@ struct Challenge: Identifiable, Codable {
     var participants: [String]
     var completions: [String: Double]
     var organizer: Organizer?
+    var comments: [Comment]
+    
+    struct Comment: Identifiable, Codable {
+        let id: String
+        let userId: String
+        let content: String
+        let timestamp: Date
+        let userProfileImageUrl: String?
+        let username: String
+    }
     
     struct Organizer: Codable {
         let id: String
@@ -68,10 +79,34 @@ struct Challenge: Identifiable, Codable {
         }
     }
     
+    enum ChallengeScope: String, Codable, CaseIterable {
+        case group = "group"
+        case competitive = "competitive"
+        
+        var displayName: String {
+            switch self {
+            case .group:
+                return "Group"
+            case .competitive:
+                return "Competitive"
+            }
+        }
+        
+        var description: String {
+            switch self {
+            case .group:
+                return "Work together towards a shared goal"
+            case .competitive:
+                return "Compete against each other to reach the goal first"
+            }
+        }
+    }
+    
     init(id: String = UUID().uuidString,
          title: String,
          description: String,
          type: ChallengeType,
+         scope: ChallengeScope = .competitive,
          goal: Double,
          unit: String,
          startDate: Date,
@@ -83,11 +118,13 @@ struct Challenge: Identifiable, Codable {
          qualifyingMuscles: [String] = [],
          participants: [String] = [],
          completions: [String: Double] = [:],
-         organizer: Organizer? = nil) {
+         organizer: Organizer? = nil,
+         comments: [Comment] = []) {
         self.id = id
         self.title = title
         self.description = description
         self.type = type
+        self.scope = scope
         self.goal = goal
         self.unit = unit
         self.startDate = startDate
@@ -102,6 +139,7 @@ struct Challenge: Identifiable, Codable {
         self.participants = Array(allParticipants)
         self.completions = completions
         self.organizer = organizer
+        self.comments = comments
     }
     
     var isActive: Bool {
@@ -150,10 +188,59 @@ struct Challenge: Identifiable, Codable {
         return !Set(qualifyingMuscles).isDisjoint(with: exerciseMuscles)
     }
     
+    var totalProgress: Double {
+        switch scope {
+        case .group:
+            return completions.values.reduce(0, +)
+        case .competitive:
+            return completions.values.max() ?? 0
+        }
+    }
+    
+    var totalProgressPercentage: Double {
+        (totalProgress / goal) * 100
+    }
+    
+    var isExpired: Bool {
+        Date() > endDate
+    }
+    
+    var isCompleted: Bool {
+        switch scope {
+        case .group:
+            return totalProgress >= goal
+        case .competitive:
+            return isExpired
+        }
+    }
+    
+    var shouldShowInActiveView: Bool {
+        !isExpired && !isCompleted
+    }
+    
+    var shouldShowInChallengesView: Bool {
+        !isExpired && !isCompleted
+    }
+    
+    func shouldAwardTrophy(userId: String) -> Bool {
+        switch scope {
+        case .group:
+            return isCompleted
+        case .competitive:
+            return isExpired && isCompletedByUser(userId)
+        }
+    }
+    
+    func getRank(for userId: String) -> Int? {
+        guard scope == .competitive && isExpired else { return nil }
+        let sortedParticipants = completions.sorted { $0.value > $1.value }
+        return sortedParticipants.firstIndex { $0.key == userId }.map { $0 + 1 }
+    }
+    
     enum CodingKeys: CodingKey {
-        case id, title, description, type, goal, unit, startDate, endDate
+        case id, title, description, type, scope, goal, unit, startDate, endDate
         case creatorId, badgeImageUrl, bannerImageUrl, callToAction
-        case qualifyingMuscles, participants, completions, organizer
+        case qualifyingMuscles, participants, completions, organizer, comments
     }
     
     init(from decoder: Decoder) throws {
@@ -162,6 +249,7 @@ struct Challenge: Identifiable, Codable {
         title = try container.decode(String.self, forKey: .title)
         description = try container.decode(String.self, forKey: .description)
         type = try container.decode(ChallengeType.self, forKey: .type)
+        scope = try container.decode(ChallengeScope.self, forKey: .scope)
         goal = try container.decode(Double.self, forKey: .goal)
         unit = try container.decode(String.self, forKey: .unit)
         startDate = try container.decode(Date.self, forKey: .startDate)
@@ -174,5 +262,6 @@ struct Challenge: Identifiable, Codable {
         participants = try container.decode([String].self, forKey: .participants)
         completions = try container.decode([String: Double].self, forKey: .completions)
         organizer = try container.decodeIfPresent(Organizer.self, forKey: .organizer)
+        comments = try container.decodeIfPresent([Comment].self, forKey: .comments) ?? []
     }
 } 

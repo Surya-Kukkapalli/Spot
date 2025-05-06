@@ -33,10 +33,6 @@ class ChallengeProgressService {
         print("DEBUG: Starting to track workout progress")
         print("DEBUG: User ID: \(userId)")
         print("DEBUG: Workout ID: \(workout.id)")
-        print("DEBUG: Workout Title: \(workout.workoutTitle)")
-        print("DEBUG: Workout Date: \(workout.createdAt)")
-        print("DEBUG: Total Volume: \(workout.totalVolume)")
-        print("DEBUG: Exercise Count: \(workout.exercises.count)")
         
         // Get active challenges for the user
         let activeChallenges = try await communityService.getActiveChallenges(for: userId)
@@ -45,60 +41,66 @@ class ChallengeProgressService {
         for challenge in activeChallenges {
             print("DEBUG: Processing challenge: \(challenge.title)")
             print("DEBUG: Challenge type: \(challenge.type.rawValue)")
+            print("DEBUG: Challenge scope: \(challenge.scope.rawValue)")
             print("DEBUG: Challenge goal: \(challenge.goal) \(challenge.unit)")
-            print("DEBUG: Challenge qualifying muscles: \(challenge.qualifyingMuscles)")
             
             // Skip if workout is outside challenge date range
             guard workout.createdAt >= challenge.startDate && workout.createdAt <= challenge.endDate else {
-                print("DEBUG: Workout date \(workout.createdAt) is outside challenge range \(challenge.startDate) - \(challenge.endDate)")
+                print("DEBUG: Workout date \(workout.createdAt) is outside challenge range")
                 continue
             }
             
             // Calculate progress based on challenge type
-            var progress: Double = 0
+            let progress = try await calculateProgress(from: workout, for: challenge)
+            print("DEBUG: Calculated progress: \(progress)")
             
-            switch challenge.type {
-            case .volume:
-                progress = calculateVolumeProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
-                print("DEBUG: Calculated volume progress: \(progress)")
-                
-            case .time:
-                progress = calculateDurationProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
-                print("DEBUG: Calculated duration progress: \(progress)")
-                
-            case .oneRepMax:
-                progress = calculateOneRepMaxProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
-                print("DEBUG: Calculated one rep max progress: \(progress)")
-                
-            case .personalRecord:
-                progress = calculatePersonalRecordProgress(from: workout, qualifyingMuscles: challenge.qualifyingMuscles)
-                print("DEBUG: Calculated personal record progress: \(progress)")
-            }
-            
-            // If there's progress to add, update the challenge
             if progress > 0 {
-                print("DEBUG: Updating challenge progress: \(progress)")
+                print("DEBUG: Updating challenge progress")
                 
                 // Get current progress
                 let currentProgress = challenge.progressForUser(userId)
                 print("DEBUG: Current progress: \(currentProgress)")
                 
-                // Add new progress
-                let totalProgress = currentProgress + progress
-                print("DEBUG: Total progress after update: \(totalProgress)")
+                // For group challenges, add to existing progress
+                // For competitive challenges, take max of current and new progress
+                let totalProgress: Double
+                switch challenge.scope {
+                case .group:
+                    totalProgress = currentProgress + progress
+                    print("DEBUG: Group challenge - Adding progress: \(currentProgress) + \(progress) = \(totalProgress)")
+                case .competitive:
+                    totalProgress = max(currentProgress, progress)
+                    print("DEBUG: Competitive challenge - Taking max: max(\(currentProgress), \(progress)) = \(totalProgress)")
+                }
                 
                 // Update progress in Firestore
                 try await communityService.updateChallengeProgress(challenge.id, userId: userId, progress: totalProgress)
                 
                 // Check if challenge is completed
-                if totalProgress >= challenge.goal {
-                    print("DEBUG: Challenge completed! Adding to trophy case")
-                    try await addChallengeToTrophyCase(challenge, userId: userId)
+                let isCompleted: Bool
+                switch challenge.scope {
+                case .group:
+                    isCompleted = challenge.totalProgress >= challenge.goal
+                case .competitive:
+                    isCompleted = totalProgress >= challenge.goal
                 }
-            } else {
-                print("DEBUG: No progress to add for this challenge")
+                
+                if isCompleted {
+                    print("DEBUG: Challenge completed! Adding to trophy case")
+                    
+                    // For group challenges, award trophies to all participants
+                    if challenge.scope == .group {
+                        for participantId in challenge.participants {
+                            try await addChallengeToTrophyCase(challenge, userId: participantId)
+                        }
+                    } else {
+                        try await addChallengeToTrophyCase(challenge, userId: userId)
+                    }
+                }
             }
         }
+        
+        print("DEBUG: Completed tracking workout progress for challenges")
     }
     
     private func calculateVolumeProgress(from workout: WorkoutSummary, qualifyingMuscles: [String]) -> Double {
@@ -263,26 +265,51 @@ class ChallengeProgressService {
         return 0
     }
     
-    private func addChallengeToTrophyCase(_ challenge: Challenge, userId: String) async throws {
-        guard let badgeImageUrl = challenge.badgeImageUrl else { return }
+    func addChallengeToTrophyCase(_ challenge: Challenge, userId: String) async throws {
+        // Only award trophy if conditions are met
+        guard challenge.shouldAwardTrophy(userId: userId) else { return }
+        
+        // Get user's rank for competitive challenges
+        var metadata: [String: String] = [
+            "challengeId": challenge.id,
+            "goal": "\(Int(challenge.goal)) \(challenge.unit)",
+            "scope": challenge.scope.rawValue
+        ]
+        
+        if challenge.scope == .competitive {
+            if let rank = challenge.getRank(for: userId) {
+                metadata["rank"] = "\(rank)"
+                // Only award trophy for top 3 or if user completed the challenge
+                guard rank <= 3 || challenge.isCompletedByUser(userId) else { return }
+            }
+        }
         
         let trophy = Trophy(
             id: UUID().uuidString,
             userId: userId,
             title: challenge.title,
             description: challenge.description,
-            imageUrl: badgeImageUrl,
+            imageUrl: challenge.badgeImageUrl ?? "",
             dateEarned: Date(),
             type: .challenge,
-            metadata: [
-                "challengeId": challenge.id,
-                "goal": "\(Int(challenge.goal)) \(challenge.unit)"
-            ]
+            metadata: metadata
         )
         
         try await db.collection("trophies")
             .document(trophy.id)
             .setData(from: trophy)
+        
+        // Post notification on main thread
+        await MainActor.run {
+            NotificationCenter.default.post(
+                name: .challengeCompleted,
+                object: nil,
+                userInfo: [
+                    "challenge": challenge,
+                    "trophy": trophy
+                ]
+            )
+        }
     }
 }
 
@@ -301,4 +328,8 @@ struct Trophy: Codable {
         case achievement
         case milestone
     }
+}
+
+extension Notification.Name {
+    static let challengeCompleted = Notification.Name("challengeCompleted")
 } 

@@ -20,6 +20,7 @@ struct CreateChallengeView: View {
     @State private var description = ""
     @State private var selectedBadgeItem: PhotosPickerItem?
     @State private var badgeImage: UIImage?
+    @State private var selectedScope: Challenge.ChallengeScope = .competitive
     
     private let steps = ["Type", "Metrics", "Duration", "Details"]
     
@@ -40,7 +41,7 @@ struct CreateChallengeView: View {
                 Group {
                     switch currentStep {
                     case 0:
-                        ChallengeTypeSelectionView(selectedType: $selectedType)
+                        ChallengeTypeSelectionView(selectedType: $selectedType, selectedScope: $selectedScope)
                     case 1:
                         ChallengeMetricsView(type: selectedType ?? .volume, goal: $goal, unit: $unit)
                     case 2:
@@ -152,6 +153,7 @@ struct CreateChallengeView: View {
                     title: title,
                     description: description,
                     type: selectedType ?? .volume,
+                    scope: selectedScope,
                     goal: goal,
                     unit: unit,
                     startDate: startDate,
@@ -180,6 +182,7 @@ struct CreateChallengeView: View {
 
 struct ChallengeTypeSelectionView: View {
     @Binding var selectedType: Challenge.ChallengeType?
+    @Binding var selectedScope: Challenge.ChallengeScope
     
     var body: some View {
         ScrollView {
@@ -221,6 +224,46 @@ struct ChallengeTypeSelectionView: View {
                     .buttonStyle(.plain)
                 }
                 .padding(.horizontal)
+                
+                // Challenge Scope Section
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Challenge Scope")
+                        .font(.headline)
+                        .padding(.horizontal)
+                    
+                    ForEach(Challenge.ChallengeScope.allCases, id: \.self) { scope in
+                        Button {
+                            selectedScope = scope
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(scope.displayName)
+                                        .font(.headline)
+                                    
+                                    Text(scope.description)
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                if selectedScope == scope {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.white)
+                                        .padding(8)
+                                        .background(Color.orange)
+                                        .clipShape(Circle())
+                                }
+                            }
+                            .padding()
+                            .background(Color(.systemBackground))
+                            .cornerRadius(12)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal)
+                }
+                .padding(.top)
             }
             .padding(.vertical)
         }

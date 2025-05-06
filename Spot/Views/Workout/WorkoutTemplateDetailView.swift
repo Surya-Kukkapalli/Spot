@@ -257,16 +257,16 @@ struct WorkoutTemplateExerciseDetailRow: View {
             }
             
             // Exercise Stats
-            HStack {
-                Text("SET")
-                    .frame(width: 40, alignment: .leading)
-                Text("LBS")
-                    .frame(width: 60)
-                Text("REPS")
-                    .frame(width: 60)
-            }
-            .font(.caption)
-            .foregroundColor(.secondary)
+            // HStack {
+            //     Text("SET")
+            //         .frame(width: 40, alignment: .leading)
+            //     Text("LBS")
+            //         .frame(width: 60)
+            //     Text("REPS")
+            //         .frame(width: 60)
+            // }
+            // .font(.caption)
+            // .foregroundColor(.secondary)
             
             ForEach(exercise.sets.indices, id: \.self) { index in
                 let set = exercise.sets[index]

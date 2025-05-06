@@ -4,20 +4,44 @@ struct ChallengesView: View {
     @ObservedObject var viewModel: CommunityViewModel
     @State private var selectedFilter = ChallengeFilter.all
     @State private var searchText = ""
+    @State private var selectedChallenge: Challenge?
     
     enum ChallengeFilter: String, CaseIterable {
         case all = "All"
-        case run = "Run"
-        case ride = "Ride"
-        case swim = "Swim"
-        case walk = "Walk"
-        case strength = "Strength"
+        case volume = "Volume"
+        case time = "Time"
+        case oneRepMax = "One Rep Max"
+        case personalRecord = "PRs"
+        case group = "Collaborative"
+        case competitive = "Competitive"
+        
+        func matches(_ challenge: Challenge) -> Bool {
+            switch self {
+            case .all:
+                return true
+            case .volume:
+                return challenge.type == .volume
+            case .time:
+                return challenge.type == .time
+            case .oneRepMax:
+                return challenge.type == .oneRepMax
+            case .personalRecord:
+                return challenge.type == .personalRecord
+            case .group:
+                return challenge.scope == .group
+            case .competitive:
+                return challenge.scope == .competitive
+            }
+        }
     }
     
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Filter buttons
+
+                Spacer()
+
+                // Filter buttons 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(ChallengeFilter.allCases, id: \.self) { filter in
@@ -39,15 +63,18 @@ struct ChallengesView: View {
                 
                 // Featured Challenge
                 if let featuredChallenge = viewModel.availableChallenges.first {
-                    NavigationLink(destination: ChallengeDetailsView(challenge: featuredChallenge, viewModel: viewModel)) {
+                    Button {
+                        selectedChallenge = featuredChallenge
+                    } label: {
                         FeaturedChallengeCard(challenge: featuredChallenge, viewModel: viewModel)
                             .padding(.horizontal)
                     }
+                    .buttonStyle(.plain)
                 }
                 
                 // Active Challenges section
                 if !viewModel.availableChallenges.isEmpty {
-                    Text("Active Challenges (\(viewModel.availableChallenges.count))")
+                    Text("Active Challenges (\(filteredChallenges.count))")
                         .font(.headline)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal)
@@ -55,18 +82,29 @@ struct ChallengesView: View {
                     // Challenge grid
                     LazyVGrid(columns: [GridItem(.flexible())], spacing: 16) {
                         ForEach(filteredChallenges) { challenge in
-                            NavigationLink(destination: ChallengeDetailsView(challenge: challenge, viewModel: viewModel)) {
+                            Button {
+                                selectedChallenge = challenge
+                            } label: {
                                 ChallengeListItem(
                                     challenge: challenge,
                                     joinAction: { viewModel.joinChallenge(challenge) },
                                     viewModel: viewModel
                                 )
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal)
                 }
             }
+        }
+        .sheet(item: $selectedChallenge) { challenge in
+            NavigationView {
+                ChallengeDetailsView(challenge: challenge, viewModel: viewModel)
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .onAppear {
             print("DEBUG: ChallengesView appeared")
@@ -78,11 +116,7 @@ struct ChallengesView: View {
     }
     
     var filteredChallenges: [Challenge] {
-        viewModel.availableChallenges.filter { challenge in
-            if selectedFilter == .all { return true }
-            // Add filtering logic based on challenge type
-            return true
-        }
+        viewModel.availableChallenges.filter { selectedFilter.matches($0) }
     }
 }
 

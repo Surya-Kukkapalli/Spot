@@ -121,7 +121,7 @@ struct OnboardingView: View {
                     } label: {
                         Text("Login")
                             .fontWeight(.semibold)
-                            .foregroundColor(.black)
+                            .foregroundColor(.blue)
                     }
                 }
                 .padding(.bottom, 32)

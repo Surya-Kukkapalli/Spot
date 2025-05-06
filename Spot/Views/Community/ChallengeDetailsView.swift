@@ -3,8 +3,12 @@ import SwiftUI
 struct ChallengeDetailsView: View {
     let challenge: Challenge
     @ObservedObject var viewModel: CommunityViewModel
-    @State private var selectedTab = 0 // 0 for Overall, 1 for Following
-    @State private var scrollOffset: CGFloat = 0
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedTab = "Overall"
+    @State private var showingParticipants = false
+    @State private var showingActivities = false
+    @State private var showingComments = false
+    @State private var animateContent = false
     
     private var formattedProgress: String {
         let progress = viewModel.userProgress[challenge.id] ?? 0
@@ -17,17 +21,176 @@ struct ChallengeDetailsView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 0) {
-                ChallengeBannerView(challenge: challenge) // Handles the banner image and badge display
-                ChallengeInfoView(challenge: challenge, viewModel: viewModel) // Displays the challenge title, description, and call-to-action
-                ChallengeProgressView(challenge: challenge, viewModel: viewModel) // Shows the user's progress and total progress
-                ChallengeRequirementsView(challenge: challenge) // Displays the challenge duration and requirements
-                ChallengeOrganizerView(challenge: challenge) // Shows the organizer's information
-                ChallengeLeaderboardView(challenge: challenge, selectedTab: $selectedTab) // Handles the leaderboard display
+            VStack(spacing: 24) {
+                // Badge and Title
+                VStack(spacing: 16) {
+                    if let badgeUrl = challenge.badgeImageUrl {
+                        AsyncImage(url: URL(string: badgeUrl)) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 120, height: 120)
+                                .background(Color.white)
+                                .clipShape(Circle())
+                                .shadow(radius: 2)
+                        } placeholder: {
+                            Image(systemName: "trophy.fill")
+                                .font(.system(size: 60))
+                                .foregroundColor(.orange)
+                                .frame(width: 120, height: 120)
+                                .background(Color.white)
+                                .clipShape(Circle())
+                                .shadow(radius: 2)
+                        }
+                    }
+                    
+                    Text(challenge.title)
+                        .font(.title)
+                        .bold()
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                        
+                    // Challenge Status
+                    if challenge.isExpired {
+                        Text("Challenge Ended")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                    } else if challenge.isCompleted {
+                        Text("Challenge Completed!")
+                            .font(.headline)
+                            .foregroundColor(.green)
+                    } else if challenge.scope == .competitive && challenge.isCompletedByUser(viewModel.userId) {
+                        Text("Goal Reached - Keep Pushing!")
+                            .font(.headline)
+                            .foregroundColor(.orange)
+                    }
+                }
+                .opacity(animateContent ? 1 : 0)
+                .offset(y: animateContent ? 0 : 20)
+                
+                // Participants
+                Button {
+                    showingParticipants = true
+                } label: {
+                    ParticipantsPreview(challenge: challenge, viewModel: viewModel)
+                }
+                .sheet(isPresented: $showingParticipants) {
+                    ParticipantsListView(challenge: challenge, viewModel: viewModel)
+                }
+                
+                // Progress
+                if viewModel.hasJoinedChallenge(challenge) {
+                    ChallengeProgressView(challenge: challenge, viewModel: viewModel)
+                        .padding(.horizontal)
+                }
+                
+                // Challenge Info
+                VStack(spacing: 16) {
+                    // Date Range
+                    HStack {
+                        Image(systemName: "calendar")
+                            .frame(width: 24)
+                        VStack(alignment: .leading) {
+                            Text("\(challenge.startDate.formatted(date: .long, time: .omitted)) to")
+                            Text(challenge.endDate.formatted(date: .long, time: .omitted))
+                        }
+                        Spacer()
+                        if let daysLeft = Calendar.current.dateComponents([.day], from: Date(), to: challenge.endDate).day {
+                            Text("\(daysLeft) days left")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    // Challenge Type
+                    HStack {
+                        Image(systemName: challenge.type.iconName)
+                            .frame(width: 24)
+                        Text(challenge.type.displayName)
+                        Spacer()
+                    }
+                    
+                    // Challenge Scope
+                    HStack {
+                        Image(systemName: challenge.scope == .group ? "person.3" : "trophy")
+                            .frame(width: 24)
+                        Text(challenge.scope.displayName)
+                        Text("•")
+                        Text(challenge.scope.description)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                }
+                .padding(.horizontal)
+                
+                // Comments
+                Button {
+                    showingComments = true
+                } label: {
+                    HStack {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                            .frame(width: 24)
+                        Text("Comments")
+                        Spacer()
+                        Text("\(challenge.comments.count)")
+                            .foregroundColor(.secondary)
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal)
+                .sheet(isPresented: $showingComments) {
+                    ChallengeCommentsView(challenge: challenge, viewModel: viewModel)
+                }
+                
+                // Your Effort
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(challenge.scope == .group ? "Group Progress" : "Your Progress")
+                        .font(.headline)
+                    
+                    HStack {
+                        VStack(alignment: .leading) {
+                            let progress = challenge.scope == .group ? challenge.totalProgress : (viewModel.userProgress[challenge.id] ?? 0)
+                            Text(formattedProgress)
+                                .font(.title2)
+                                .bold()
+                            Text("of \(Int(challenge.goal)) \(challenge.unit)")
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        Spacer()
+                        
+                        Button("See Your Activities") {
+                            showingActivities = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.orange)
+                    }
+                }
+                .padding()
+                .background(Color(.systemBackground))
+                .cornerRadius(12)
+                .padding(.horizontal)
+                .sheet(isPresented: $showingActivities) {
+                    ChallengeActivitiesView(challenge: challenge, viewModel: viewModel)
+                }
+                
+                // Leaderboard
+                ChallengeLeaderboardView(challenge: challenge, selectedTab: $selectedTab)
             }
+            .padding(.vertical)
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Done") {
+                    dismiss()
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: {
                     // Share action
@@ -36,95 +199,215 @@ struct ChallengeDetailsView: View {
                 }
             }
         }
-    }
-}
-
-// MARK: - Banner View
-private struct ChallengeBannerView: View {
-    let challenge: Challenge
-    
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            // Banner image
-            if let imageUrl = challenge.bannerImageUrl {
-                AsyncImage(url: URL(string: imageUrl)) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(height: 200)
-                        .clipped()
-                } placeholder: {
-                    Color.gray
-                        .frame(height: 200)
-                }
-            } else {
-                Color.gray
-                    .frame(height: 200)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.3)) {
+                animateContent = true
             }
-            
-            // Badge overlay
-            if let badgeUrl = challenge.badgeImageUrl {
-                AsyncImage(url: URL(string: badgeUrl)) { image in
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 100, height: 100)
-                        .background(Color.white)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.white, lineWidth: 4))
-                        .offset(y: 50)
-                } placeholder: {
-                    Image(systemName: "trophy.fill")
-                        .font(.system(size: 40))
-                        .foregroundColor(.orange)
-                        .frame(width: 100, height: 100)
-                        .background(Color.white)
-                        .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.white, lineWidth: 4))
-                        .offset(y: 50)
-                }
-            }
+        }
+        .task {
+            await viewModel.loadParticipantProfiles(for: challenge)
         }
     }
 }
 
-// MARK: - Info View
-private struct ChallengeInfoView: View {
+// MARK: - Participants Preview
+struct ParticipantsPreview: View {
     let challenge: Challenge
     @ObservedObject var viewModel: CommunityViewModel
     
     var body: some View {
-        VStack(spacing: 16) {
-            Color.clear.frame(height: 60)
-            
-            Text(challenge.title)
-                .font(.title)
-                .bold()
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-            
-            if let callToAction = challenge.callToAction {
-                Text(callToAction)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+        VStack(spacing: 8) {
+            HStack(spacing: -8) {
+                ForEach(challenge.participants.prefix(10), id: \.self) { userId in
+                    if let profile = viewModel.participantProfiles[userId] {
+                        AsyncImage(url: URL(string: profile.profileImageUrl ?? "")) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 32, height: 32)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        } placeholder: {
+                            Circle()
+                                .fill(Color.gray)
+                                .frame(width: 32, height: 32)
+                                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        }
+                    } else {
+                        Circle()
+                            .fill(Color.gray)
+                            .frame(width: 32, height: 32)
+                            .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                    }
+                }
+                
+                if challenge.participants.count > 10 {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 32, height: 32)
+                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .overlay(
+                            Text("+\(challenge.participants.count - 10)")
+                                .font(.caption2)
+                                .foregroundColor(.white)
+                        )
+                }
             }
             
-            if !viewModel.hasJoinedChallenge(challenge) {
-                Button(action: {
-                    viewModel.joinChallenge(challenge)
-                }) {
-                    Text("Join Challenge")
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.orange)
-                        .foregroundColor(.white)
-                        .cornerRadius(8)
+            Text("\(challenge.participants.count) participants")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .padding(.horizontal)
+    }
+}
+
+// MARK: - Participants List View
+struct ParticipantsListView: View {
+    let challenge: Challenge
+    @ObservedObject var viewModel: CommunityViewModel
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            List(challenge.participants, id: \.self) { userId in
+                if let profile = viewModel.participantProfiles[userId] {
+                    HStack {
+                        AsyncImage(url: URL(string: profile.profileImageUrl ?? "")) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 40, height: 40)
+                                .clipShape(Circle())
+                        } placeholder: {
+                            Circle()
+                                .fill(Color.gray)
+                                .frame(width: 40, height: 40)
+                        }
+                        
+                        Text(profile.username)
+                            .font(.headline)
+                        
+                        Spacer()
+                        
+                        Text("\(Int(challenge.progressForUser(userId))) \(challenge.unit)")
+                            .foregroundColor(.secondary)
+                    }
                 }
-                .padding(.horizontal)
+            }
+            .navigationTitle("Participants")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
             }
         }
+    }
+}
+
+// MARK: - Challenge Activities View
+struct ChallengeActivitiesView: View {
+    let challenge: Challenge
+    @ObservedObject var viewModel: CommunityViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var activities: [WorkoutSummary] = []
+    
+    var body: some View {
+        NavigationView {
+            List(activities) { activity in
+                WorkoutSummaryRow(workout: activity)
+            }
+            .navigationTitle("Your Activities")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+            .task {
+                activities = await viewModel.getUserActivities(for: challenge)
+            }
+        }
+    }
+}
+
+// MARK: - Challenge Comments View
+struct ChallengeCommentsView: View {
+    let challenge: Challenge
+    @ObservedObject var viewModel: CommunityViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var newComment = ""
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                List(challenge.comments, id: \.id) { comment in
+                    HStack(alignment: .top, spacing: 12) {
+                        AsyncImage(url: URL(string: comment.userProfileImageUrl ?? "")) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .frame(width: 40, height: 40)
+                                .clipShape(Circle())
+                        } placeholder: {
+                            Circle()
+                                .fill(Color.gray)
+                                .frame(width: 40, height: 40)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(comment.username)
+                                .font(.headline)
+                            Text(comment.content)
+                            Text(comment.timestamp.formatted())
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                
+                HStack {
+                    TextField("Add a comment...", text: $newComment)
+                        .textFieldStyle(.roundedBorder)
+                    
+                    Button("Send") {
+                        Task {
+                            await viewModel.addComment(to: challenge, content: newComment)
+                            newComment = ""
+                        }
+                    }
+                    .disabled(newComment.isEmpty)
+                }
+                .padding()
+            }
+            .navigationTitle("Comments")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Time Formatting Helper
+enum TimeFormatter {
+    static func formatDuration(seconds: Int) -> String {
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        let seconds = seconds % 60
+        return String(format: "%d:%02d:%02d", hours, minutes, seconds)
     }
 }
 
@@ -134,149 +417,55 @@ private struct ChallengeProgressView: View {
     @ObservedObject var viewModel: CommunityViewModel
     
     var body: some View {
-        if viewModel.hasJoinedChallenge(challenge) {
-            VStack(spacing: 8) {
-                HStack {
-                    let progress = viewModel.userProgress[challenge.id] ?? 0
-                    Text("\(Int(progress)) / \(Int(challenge.goal)) \(challenge.unit)")
-                        .font(.headline)
-                    Spacer()
-                    Text("\(Int((progress / challenge.goal) * 100))%")
-                        .font(.headline)
-                }
-                
-                ProgressView(value: viewModel.userProgress[challenge.id] ?? 0, total: challenge.goal)
-                    .tint(.orange)
-            }
-            .padding(.horizontal)
-        }
-    }
-}
-
-// MARK: - Requirements View
-private struct ChallengeRequirementsView: View {
-    let challenge: Challenge
-    
-    var body: some View {
-        VStack(spacing: 20) {
-            // Time range
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Image(systemName: "calendar")
-                    .frame(width: 30)
-                VStack(alignment: .leading) {
-                    Text("\(challenge.startDate.formatted(date: .long, time: .omitted)) to")
-                    Text(challenge.endDate.formatted(date: .long, time: .omitted))
-                }
+                let progress = challenge.scope == .group ? challenge.totalProgress : (viewModel.userProgress[challenge.id] ?? 0)
+                Text("\(Int(progress)) / \(Int(challenge.goal)) \(challenge.unit)")
+                    .font(.headline)
                 Spacer()
-                if let daysLeft = Calendar.current.dateComponents([.day], from: Date(), to: challenge.endDate).day {
-                    Text("\(daysLeft) days left")
-                        .foregroundColor(.secondary)
-                }
+                Text("\(Int((progress / challenge.goal) * 100))%")
+                    .font(.headline)
             }
             
-            // Challenge requirements
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: "target")
-                        .frame(width: 30)
-                    Text("Requirements")
-                        .font(.headline)
-                    Spacer()
-                }
+            ProgressView(value: challenge.scope == .group ? challenge.totalProgress : (viewModel.userProgress[challenge.id] ?? 0), total: challenge.goal)
+                .tint(getProgressColor())
                 
-                HStack {
-                    Image(systemName: challenge.type.iconName)
-                    Text("\(Int(challenge.goal)) \(challenge.unit)")
-                    Spacer()
-                }
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .padding(.leading, 30)
-                
-                if !challenge.qualifyingMuscles.isEmpty {
-                    Text("Qualifying Muscles:")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .padding(.leading, 30)
-                    
-                    FlowLayout(spacing: 8) {
-                        ForEach(challenge.qualifyingMuscles, id: \.self) { muscle in
-                            Text(muscle.capitalized)
-                                .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.blue.opacity(0.1))
-                                .foregroundColor(.blue)
-                                .cornerRadius(12)
-                        }
-                    }
-                    .padding(.leading, 30)
-                }
+            if challenge.scope == .group {
+                Text("Combined progress of all participants")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else if challenge.isCompletedByUser(viewModel.userId) && !challenge.isExpired {
+                Text("You've reached the goal! Keep pushing until the challenge ends.")
+                    .font(.caption)
+                    .foregroundColor(.orange)
             }
         }
-        .padding(.horizontal)
     }
-}
-
-// MARK: - Organizer View
-private struct ChallengeOrganizerView: View {
-    let challenge: Challenge
     
-    var body: some View {
-        if let organizer = challenge.organizer {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    AsyncImage(url: URL(string: organizer.imageUrl ?? "")) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 50, height: 50)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    } placeholder: {
-                        Color.gray
-                            .frame(width: 50, height: 50)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    
-                    VStack(alignment: .leading) {
-                        Text(organizer.type.uppercased())
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                        Text(organizer.name)
-                            .font(.headline)
-                    }
-                    
-                    Spacer()
-                    
-                    if organizer.type == "CLUB" {
-                        Button("Join Club") {
-                            // Join club action
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.orange)
-                    }
-                }
-            }
-            .padding(.horizontal)
+    private func getProgressColor() -> Color {
+        if challenge.isExpired {
+            return .gray
+        } else if challenge.isCompleted || 
+                  (challenge.scope == .competitive && challenge.isCompletedByUser(viewModel.userId)) {
+            return .green
         }
+        return .orange
     }
 }
 
 // MARK: - Leaderboard View
 private struct ChallengeLeaderboardView: View {
     let challenge: Challenge
-    @Binding var selectedTab: Int
+    @Binding var selectedTab: String
     
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                TabButton(title: "Overall", isSelected: selectedTab == 0) {
-                    selectedTab = 0
-                }
-                TabButton(title: "Following", isSelected: selectedTab == 1) {
-                    selectedTab = 1
-                }
+                LeaderboardTabButton(title: "Overall", selectedTab: $selectedTab)
+                LeaderboardTabButton(title: "Following", selectedTab: $selectedTab)
             }
+            .background(Color(.systemGray6))
+            .cornerRadius(8)
             .padding(.horizontal)
             
             // Leaderboard header
@@ -294,8 +483,8 @@ private struct ChallengeLeaderboardView: View {
             
             // Participants list
             LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                ForEach(selectedTab == 0 ? challenge.leaderboard : challenge.followingLeaderboard) { entry in
-                    ParticipantRow(entry: entry, challenge: challenge)
+                ForEach(selectedTab == "Overall" ? challenge.leaderboard : challenge.followingLeaderboard) { entry in
+                    LeaderboardRow(entry: entry, challenge: challenge)
                         .padding(.horizontal)
                         .padding(.vertical, 8)
                 }
@@ -304,17 +493,7 @@ private struct ChallengeLeaderboardView: View {
     }
 }
 
-// MARK: - Time Formatting Helper
-enum TimeFormatter {
-    static func formatDuration(seconds: Int) -> String {
-        let hours = seconds / 3600
-        let minutes = (seconds % 3600) / 60
-        let seconds = seconds % 60
-        return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-    }
-}
-
-struct ParticipantRow: View {
+private struct LeaderboardRow: View {
     let entry: Challenge.LeaderboardEntry
     let challenge: Challenge
     
@@ -355,6 +534,25 @@ struct ParticipantRow: View {
     }
 }
 
+private struct LeaderboardTabButton: View {
+    let title: String
+    @Binding var selectedTab: String
+    
+    var body: some View {
+        Button(action: {
+            selectedTab = title
+        }) {
+            Text(title)
+                .font(.subheadline)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .background(selectedTab == title ? Color.orange : Color.clear)
+                .foregroundColor(selectedTab == title ? .white : .primary)
+        }
+    }
+}
+
 // Preview
 struct ChallengeDetailsView_Previews: PreviewProvider {
     static var previews: some View {
@@ -374,5 +572,51 @@ struct ChallengeDetailsView_Previews: PreviewProvider {
                 viewModel: CommunityViewModel()
             )
         }
+    }
+}
+
+private struct WorkoutSummaryRow: View {
+    let workout: WorkoutSummary
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            // User profile image
+            AsyncImage(url: URL(string: workout.userProfileImageUrl ?? "")) { image in
+                image.resizable().aspectRatio(contentMode: .fill)
+            } placeholder: {
+                Image(systemName: "person.circle.fill")
+                    .foregroundColor(.gray)
+            }
+            .frame(width: 40, height: 40)
+            .clipShape(Circle())
+            
+            // Workout details
+            VStack(alignment: .leading, spacing: 4) {
+                Text(workout.workoutTitle)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                
+                HStack(spacing: 12) {
+                    Label("\(workout.duration)min", systemImage: "clock")
+                    Label("\(workout.totalVolume)lbs", systemImage: "scalemass")
+                    if let records = workout.personalRecords, !records.isEmpty {
+                        Label("\(records.count) PR", systemImage: "trophy.fill")
+                            .foregroundStyle(.yellow)
+                    }
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            // Date
+            Text(workout.createdAt.formatted(.relative(presentation: .named)))
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(Color(.systemBackground))
     }
 } 

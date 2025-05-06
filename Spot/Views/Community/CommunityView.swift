@@ -6,6 +6,9 @@ struct CommunityView: View {
     @State private var selectedTab = 0
     @State private var showingCreateChallenge = false
     @State private var showingCreateTeam = false
+    @State private var showingCompletionAlert = false
+    @State private var completedChallenge: Challenge?
+    @State private var completedTrophy: Trophy?
     
     var body: some View {
         NavigationView {
@@ -56,6 +59,40 @@ struct CommunityView: View {
             .task {
                 await viewModel.loadData()
             }
+            .alert("Challenge Completed! 🎉", isPresented: $showingCompletionAlert) {
+                Button("View Trophy Case") {
+                    // Navigate to trophy case
+                }
+                Button("OK", role: .cancel) { }
+            } message: {
+                if let challenge = completedChallenge {
+                    if challenge.scope == .competitive,
+                       let trophy = completedTrophy,
+                       let rankStr = trophy.metadata["rank"],
+                       let rank = Int(rankStr) {
+                        Text("Congratulations! You've completed '\(challenge.title)' and placed \(formatRank(rank))!")
+                    } else {
+                        Text("Congratulations! You've completed '\(challenge.title)'!")
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .challengeCompleted)) { notification in
+                if let challenge = notification.userInfo?["challenge"] as? Challenge,
+                   let trophy = notification.userInfo?["trophy"] as? Trophy {
+                    completedChallenge = challenge
+                    completedTrophy = trophy
+                    showingCompletionAlert = true
+                }
+            }
+        }
+    }
+    
+    private func formatRank(_ rank: Int) -> String {
+        switch rank {
+        case 1: return "1st place"
+        case 2: return "2nd place"
+        case 3: return "3rd place"
+        default: return "\(rank)th place"
         }
     }
 }
@@ -71,6 +108,13 @@ class CommunityViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var isLoading = false
     @Published var currentUserImage: UIImage?
+    @Published var participantProfiles: [String: UserProfile] = [:]
+    
+    struct UserProfile: Identifiable {
+        let id: String
+        let username: String
+        let profileImageUrl: String?
+    }
     
     private let service = CommunityService()
     private let auth = Auth.auth()
@@ -98,8 +142,12 @@ class CommunityViewModel: ObservableObject {
             )
             
             await MainActor.run {
-                self.activeChallenges = active
-                self.availableChallenges = available
+                // Filter active challenges
+                self.activeChallenges = active.filter { $0.shouldShowInActiveView }
+                
+                // Filter available challenges
+                self.availableChallenges = available.filter { $0.shouldShowInChallengesView }
+                
                 self.teams = userTeams
                 
                 print("DEBUG: Loaded \(active.count) active challenges")
@@ -109,6 +157,18 @@ class CommunityViewModel: ObservableObject {
                 // Update progress for active challenges
                 for challenge in active {
                     self.userProgress[challenge.id] = challenge.progressForUser(userId)
+                }
+                
+                // Check for expired competitive challenges that need trophies
+                Task {
+                    for challenge in active where challenge.scope == .competitive && challenge.isExpired {
+                        do {
+                            let challengeProgressService = ChallengeProgressService()
+                            try await challengeProgressService.addChallengeToTrophyCase(challenge, userId: userId)
+                        } catch {
+                            print("Error awarding trophy for expired challenge: \(error)")
+                        }
+                    }
                 }
             }
         } catch {
@@ -292,6 +352,55 @@ class CommunityViewModel: ObservableObject {
             await loadData()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+    
+    func loadParticipantProfiles(for challenge: Challenge) async {
+        do {
+            let profiles = try await service.getUserProfiles(userIds: challenge.participants)
+            await MainActor.run {
+                for profile in profiles {
+                    participantProfiles[profile.id] = UserProfile(
+                        id: profile.id,
+                        username: profile.username,
+                        profileImageUrl: profile.profileImageUrl
+                    )
+                }
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    func addComment(to challenge: Challenge, content: String) async {
+        guard let user = auth.currentUser else { return }
+        
+        do {
+            let comment = Challenge.Comment(
+                id: UUID().uuidString,
+                userId: user.uid,
+                content: content,
+                timestamp: Date(),
+                userProfileImageUrl: user.photoURL?.absoluteString,
+                username: user.displayName ?? "Unknown"
+            )
+            try await service.addComment(to: challenge.id, comment: comment)
+            await loadData()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+    
+    func getUserActivities(for challenge: Challenge) async -> [WorkoutSummary] {
+        do {
+            return try await service.getUserWorkouts(
+                userId: userId,
+                startDate: challenge.startDate,
+                endDate: challenge.endDate
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+            return []
         }
     }
 }
