@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WelcomeView: View {
     @State private var showSignUp = false
+    @State private var showLogin = false
     
     var body: some View {
         VStack(spacing: 24) {
@@ -38,11 +39,29 @@ struct WelcomeView: View {
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 32)
+//
+//            // Login Button
+//                HStack(spacing: 4) {
+//                    Text("Already a Spotter?")
+//                        .foregroundColor(.gray)
+//                    
+//                    Button {
+//                        showLogin = true
+//                    } label: {
+//                        Text("Login")
+//                            .fontWeight(.semibold)
+//                            .foregroundColor(.blue)
+//                    }
+//                }
+//                .padding(.bottom, 32)
         }
-        .navigationBarBackButtonHidden()
+        //.navigationBarBackButtonHidden()
         .navigationDestination(isPresented: $showSignUp) {
             SignUpView()
         }
+//        .navigationDestination(isPresented: $showLogin) {
+//            LoginView()
+//        }
     }
 }
 

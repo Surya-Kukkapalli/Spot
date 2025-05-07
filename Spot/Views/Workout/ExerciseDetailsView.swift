@@ -29,10 +29,6 @@ class ExerciseDetailsViewModel: ObservableObject {
     private let db = Firestore.firestore()
     
     init(exercise: ExerciseTemplate) {
-        //print("DEBUG: Initializing ExerciseDetailsView with exercise:")
-        //print("DEBUG: - Name: \(exercise.name)")
-        //print("DEBUG: - GifUrl: \(exercise.gifUrl)")
-        //print("DEBUG: - Instructions count: \(exercise.instructions.count)")
         self.exercise = exercise
         Task {
             await loadExerciseDetails()
@@ -544,7 +540,7 @@ private struct SummaryTab: View {
                     Image(systemName: "person.circle")
                         .resizable()
                         .frame(width: 24, height: 24)
-                    Text("Add your sex, age and weight so that we can show you your strength level")
+                    Text("Add your sex, age and weight so that we can show you your strength level - Coming Soon")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -733,87 +729,138 @@ struct LeaderboardSection: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Leaderboard")
-                .font(.headline)
+            // Title and Tabs
+            VStack(spacing: 8) {
+                // Text(exercise.name.capitalized)
+                //     .font(.headline)
+                //     .padding(.horizontal)
+                
+                HStack(spacing: 0) {
+                    LeaderboardTabButton(title: "Overall", selectedTab: $viewModel.selectedTab)
+                    LeaderboardTabButton(title: "Following", selectedTab: $viewModel.selectedTab)
+                }
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
                 .padding(.horizontal)
+            }
             
-            if viewModel.leaderboardEntries.isEmpty {
+            // Leaderboard header
+            HStack {
+                Text("ATHLETE")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("ONE REP MAX")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal)
+            
+            if viewModel.isLoading {
+                VStack {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                    Text("Loading records...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+            } else if let error = viewModel.error {
+                VStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundColor(.red)
+                    Text(error)
+                        .foregroundColor(.red)
+                        .multilineTextAlignment(.center)
+                }
+                .padding()
+            } else if viewModel.leaderboardEntries.isEmpty {
                 VStack(spacing: 20) {
-                    Text("No records yet")
+                    Text(viewModel.selectedTab == "Following" ? "No records from people you follow" : "No records yet")
                         .foregroundColor(.secondary)
                         .padding()
                     
-                    Button(action: { showShareSheet = true }) {
-                        HStack {
-                            Image(systemName: "person.badge.plus")
-                            Text("Invite a Friend")
+                    if viewModel.selectedTab == "Following" {
+                        NavigationLink(destination: Text("Find Friends")) {
+                            HStack {
+                                Image(systemName: "person.2.fill")
+                                Text("Find Friends")
+                            }
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .cornerRadius(10)
                         }
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(10)
+                        .padding(.horizontal)
+                    } else {
+                        Button(action: { showShareSheet = true }) {
+                            HStack {
+                                Image(systemName: "person.badge.plus")
+                                Text("Invite a Friend")
+                            }
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .cornerRadius(10)
+                        }
+                        .padding(.horizontal)
                     }
-                    .padding(.horizontal)
                 }
             } else {
-                VStack(spacing: 16) {
-                    ForEach(Array(viewModel.leaderboardEntries.enumerated()), id: \.element.id) { index, entry in
-                        HStack {
-                            NavigationLink(destination: ProfileView(userId: entry.userId)) {
-                                HStack {
-                                    AsyncImage(url: URL(string: entry.userProfileImageUrl ?? "")) { image in
-                                        image
-                                            .resizable()
-                                            .scaledToFill()
-                                    } placeholder: {
-                                        Image(systemName: "person.circle.fill")
-                                            .foregroundColor(.gray)
-                                    }
-                                    .frame(width: 40, height: 40)
-                                    .clipShape(Circle())
-                                    
-                                    VStack(alignment: .leading) {
-                                        Text(entry.username)
-                                            .font(.headline)
-                                        Text("\(Int(entry.weight))kg")
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    // Medal for top 3
-                                    if index < 3 {
-                                        Image(systemName: getMedalSymbol(for: index))
-                                            .foregroundColor(getMedalColor(for: index))
-                                            .font(.title2)
+                ScrollView {
+                    LazyVStack(spacing: 16) {
+                        ForEach(Array(viewModel.leaderboardEntries.enumerated()), id: \.element.id) { index, entry in
+                            HStack {
+                                NavigationLink(destination: ProfileView(userId: entry.userId)) {
+                                    HStack {
+                                        AsyncImage(url: URL(string: entry.userProfileImageUrl ?? "")) { image in
+                                            image
+                                                .resizable()
+                                                .scaledToFill()
+                                        } placeholder: {
+                                            Image(systemName: "person.circle.fill")
+                                                .foregroundColor(.gray)
+                                        }
+                                        .frame(width: 40, height: 40)
+                                        .clipShape(Circle())
+                                        
+                                        VStack(alignment: .leading) {
+                                            Text(entry.username)
+                                                .font(.headline)
+                                            Text(formatDate(entry.date))
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        VStack(alignment: .trailing) {
+                                            Text("\(Int(entry.weight))lbs")
+                                                .font(.headline)
+                                                .foregroundColor(.primary)
+                                            
+                                            // Medal for top 3
+                                            if index < 3 {
+                                                Image(systemName: getMedalSymbol(for: index))
+                                                    .foregroundColor(getMedalColor(for: index))
+                                                    .font(.title2)
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
-                        .padding(.horizontal)
-                        
-                        if index < viewModel.leaderboardEntries.count - 1 {
-                            Divider()
-                                .padding(.horizontal)
+                            .padding(.horizontal)
+                            
+                            if index < viewModel.leaderboardEntries.count - 1 {
+                                Divider()
+                                    .padding(.horizontal)
+                            }
                         }
                     }
-                    
-                    Button(action: { showShareSheet = true }) {
-                        HStack {
-                            Image(systemName: "person.badge.plus")
-                            Text("Invite a Friend")
-                        }
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(10)
-                    }
-                    .padding()
                 }
             }
         }
@@ -821,8 +868,22 @@ struct LeaderboardSection: View {
             ShareSheet(activityItems: ["Check out my workout progress on Spot! Download the app and let's compete: https://spotapp.com"])
         }
         .task {
-            await viewModel.fetchLeaderboard(for: exercise.id)
+            print("DEBUG: Initial leaderboard fetch for exercise: \(exercise.name)")
+            await viewModel.fetchLeaderboard(for: exercise.name)
         }
+        .onChange(of: viewModel.selectedTab) { _ in
+            Task {
+                print("DEBUG: Refreshing leaderboard for exercise: \(exercise.name)")
+                await viewModel.fetchLeaderboard(for: exercise.name)
+            }
+        }
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
     }
     
     private func getMedalSymbol(for index: Int) -> String {
@@ -844,9 +905,33 @@ struct LeaderboardSection: View {
     }
 }
 
+private struct LeaderboardTabButton: View {
+    let title: String
+    @Binding var selectedTab: String
+    
+    var body: some View {
+        Button(action: {
+            selectedTab = title
+        }) {
+            Text(title)
+                .font(.subheadline)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .background(selectedTab == title ? Color.blue : Color.clear)
+                .foregroundColor(selectedTab == title ? .white : .primary)
+        }
+    }
+}
+
 class LeaderboardViewModel: ObservableObject {
     @Published var leaderboardEntries: [LeaderboardEntry] = []
+    @Published var isLoading = false
+    @Published var error: String?
+    @Published var selectedTab = "Overall"
     private let db = Firestore.firestore()
+    private var allEntries: [LeaderboardEntry] = []
+    private let prService = PersonalRecordService()
     
     struct LeaderboardEntry: Identifiable {
         let id: String
@@ -858,63 +943,92 @@ class LeaderboardViewModel: ObservableObject {
     }
     
     @MainActor
-    func fetchLeaderboard(for exerciseId: String) async {
+    func fetchLeaderboard(for exerciseName: String) async {
+        isLoading = true
+        error = nil
+        allEntries = []
+        leaderboardEntries = []
+        
         do {
-            guard let currentUserId = Auth.auth().currentUser?.uid else { return }
-            
-            // First get the current user's following list
-            let currentUserDoc = try await db.collection("users").document(currentUserId).getDocument()
-            guard let currentUser = try? currentUserDoc.data(as: User.self),
-                  !currentUser.followingIds.isEmpty else {
-                // If user isn't following anyone, just show their own record if it exists
-                if let user = try? currentUserDoc.data(as: User.self),
-                   let oneRepMax = user.exerciseOneRepMaxes?[exerciseId] {
-                    leaderboardEntries = [
-                        LeaderboardEntry(
-                            id: UUID().uuidString,
-                            userId: currentUserId,
-                            username: user.username,
-                            userProfileImageUrl: user.profileImageUrl,
-                            weight: oneRepMax.weight,
-                            date: oneRepMax.date
-                        )
-                    ]
-                } else {
-                    leaderboardEntries = []
-                }
+            guard let currentUserId = Auth.auth().currentUser?.uid else {
+                error = "Not logged in"
+                isLoading = false
                 return
             }
             
-            // Include current user's ID in the search
-            var userIds = currentUser.followingIds
-            userIds.append(currentUserId)
+            print("DEBUG: Fetching leaderboard for exercise: \(exerciseName)")
+            print("DEBUG: Current user ID: \(currentUserId)")
             
-            // Get all followed users who have a one rep max for this exercise
-            let usersSnapshot = try await db.collection("users")
-                .whereField("id", in: userIds)
-                .getDocuments()
+            // First get the current user's data and following list
+            let currentUserDoc = try await db.collection("users").document(currentUserId).getDocument()
+            guard let currentUser = try? currentUserDoc.data(as: User.self) else {
+                error = "Could not load user data"
+                isLoading = false
+                return
+            }
             
-            var entries: [LeaderboardEntry] = []
+            print("DEBUG: Current user follows: \(currentUser.followingIds)")
             
-            for document in usersSnapshot.documents {
-                if let user = try? document.data(as: User.self),
-                   let oneRepMax = user.exerciseOneRepMaxes?[exerciseId] {
+            // Get current user's PR
+            if let currentUserPR = try await prService.getPR(userId: currentUserId, exerciseName: exerciseName) {
+                print("DEBUG: Found PR for current user: \(currentUserPR.displayText)")
+                let entry = LeaderboardEntry(
+                    id: UUID().uuidString,
+                    userId: currentUserId,
+                    username: currentUser.username,
+                    userProfileImageUrl: currentUser.profileImageUrl,
+                    weight: currentUserPR.oneRepMax,
+                    date: currentUserPR.date
+                )
+                allEntries.append(entry)
+            }
+            
+            // Get PRs for followed users
+            for followedId in currentUser.followingIds {
+                print("DEBUG: Checking PR for followed user: \(followedId)")
+                if let followedUserDoc = try? await db.collection("users").document(followedId).getDocument(),
+                   let followedUser = try? followedUserDoc.data(as: User.self),
+                   let followedPR = try await prService.getPR(userId: followedId, exerciseName: exerciseName) {
+                    print("DEBUG: Found PR for followed user \(followedUser.username): \(followedPR.displayText)")
                     let entry = LeaderboardEntry(
                         id: UUID().uuidString,
-                        userId: user.id ?? "",
-                        username: user.username,
-                        userProfileImageUrl: user.profileImageUrl,
-                        weight: oneRepMax.weight,
-                        date: oneRepMax.date
+                        userId: followedId,
+                        username: followedUser.username,
+                        userProfileImageUrl: followedUser.profileImageUrl,
+                        weight: followedPR.oneRepMax,
+                        date: followedPR.date
                     )
-                    entries.append(entry)
+                    allEntries.append(entry)
                 }
             }
             
             // Sort by weight descending
-            leaderboardEntries = entries.sorted { $0.weight > $1.weight }
+            allEntries = allEntries.sorted { $0.weight > $1.weight }
+            print("DEBUG: Total entries found: \(allEntries.count)")
+            
+            // Filter based on selected tab
+            updateLeaderboardEntries(currentUserId: currentUserId, followingIds: currentUser.followingIds)
+            
         } catch {
+            self.error = error.localizedDescription
             print("Error fetching leaderboard: \(error)")
+        }
+        
+        isLoading = false
+    }
+    
+    @MainActor
+    func updateLeaderboardEntries(currentUserId: String, followingIds: [String]) {
+        switch selectedTab {
+        case "Following":
+            // Show only entries from users being followed and the current user
+            leaderboardEntries = allEntries.filter { entry in
+                entry.userId == currentUserId || followingIds.contains(entry.userId)
+            }
+            print("DEBUG: Filtered to \(leaderboardEntries.count) following entries")
+        default: // "Overall"
+            leaderboardEntries = allEntries
+            print("DEBUG: Showing all \(leaderboardEntries.count) entries")
         }
     }
 }
