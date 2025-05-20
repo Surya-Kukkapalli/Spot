@@ -31,6 +31,8 @@ struct VisionView: View {
                     // --- Common Feedback List (for video summary or live session summary) ---
                     // Renamed from feedbackListView to commonFeedbackDisplayView
                     commonFeedbackDisplayView()
+                        .frame(height: 200) // Temporary for testing
+                        .background(Color.yellow) // Temporary for testing
 
                     Spacer()
                 }
@@ -153,7 +155,7 @@ struct VisionView: View {
     // MARK: - Live Camera Specific UI
     @ViewBuilder
     private func liveCameraInterface(geometry: GeometryProxy) -> some View {
-        ZStack {
+        ZStack { // Use ZStack to overlay loading indicator
             if viewModel.isCameraPermissionGranted {
                 CameraPreviewView(captureSession: viewModel.captureSession)
                     .frame(height: geometry.size.width * (16/9)) // Maintain aspect ratio, adjust as needed
@@ -186,6 +188,21 @@ struct VisionView: View {
             }
             .padding(.horizontal)
 
+            // Camera Switching Loading Indicator
+             if viewModel.isSwitchingCamera {
+                 VStack {
+                     ProgressView()
+                         .scaleEffect(1.5)
+                         .padding(.bottom, 8)
+                     Text("Switching Camera...")
+                         .font(.caption)
+                         .foregroundColor(.secondary)
+                 }
+                 .padding(20)
+                 .background(Material.ultraThin)
+                 .cornerRadius(10)
+                 .shadow(radius: 5)
+             }
 
         }
         .frame(height: geometry.size.width * (16/9)) // Match CameraPreviewView height
@@ -288,25 +305,44 @@ struct VisionView: View {
         }
     }
     
-    // This view now shows displayFeedbackItems, which is populated based on mode
+    // This view shows displayFeedbackItems, which is populated based on mode
     @ViewBuilder
     private func commonFeedbackDisplayView() -> some View {
-        // (Your existing feedbackListView logic from VisionView.txt source: 184-189,
-        //  but using viewModel.displayFeedbackItems)
-        // Show if analysis is complete (video) OR if live session stopped and has summary items
-        if (viewModel.analysisCompleted && viewModel.currentMode == .videoUpload && !viewModel.displayFeedbackItems.isEmpty) ||
-           (!viewModel.isLiveSessionRunning && viewModel.currentMode == .liveCamera && !viewModel.displayFeedbackItems.isEmpty && viewModel.repCount > 0) ||
-           (!viewModel.isLiveSessionRunning && viewModel.currentMode == .liveCamera && viewModel.repCount == 0 && !viewModel.displayFeedbackItems.filter({$0.type == .detectionQuality}).isEmpty ) // Show if no reps but detection quality msg
-        {
+        let isVideoModeAndCompleted = viewModel.analysisCompleted && viewModel.currentMode == .videoUpload
+        // Corrected condition for live summary:
+        let isLiveModeAndSummaryReady = !viewModel.isLiveSessionRunning && viewModel.currentMode == .liveCamera && viewModel.analysisCompletedForLive
+
+        // For the live summary to show, we need a clear signal that the live session
+        // has finished its "processing" of the summary.
+        // Let's adjust the condition. After stopLiveAnalysis, displayFeedbackItems will be populated.
+        
+//        let shouldShowSummary = (isVideoModeAndCompleted && !viewModel.displayFeedbackItems.isEmpty) ||
+//                                (!viewModel.isLiveSessionRunning && viewModel.currentMode == .liveCamera && !viewModel.displayFeedbackItems.isEmpty && viewModel.repCount >= 0) // repCount >= 0 ensures it was at least attempted or stopped
+        
+        // Show the list if either summary type is ready AND there are items to display
+        let shouldShowSummary =  (isVideoModeAndCompleted && !viewModel.displayFeedbackItems.isEmpty) ||
+           (isLiveModeAndSummaryReady && !viewModel.displayFeedbackItems.isEmpty)
+
+
+        if shouldShowSummary {
              List {
                  Section {
-                     if viewModel.displayFeedbackItems.allSatisfy({ $0.type == .positive || $0.type == .detectionQuality }) && !viewModel.displayFeedbackItems.isEmpty {
-                         positiveFeedbackSummaryRow(items: viewModel.displayFeedbackItems)
-                     } else {
+                     // If all items in displayFeedbackItems are positive OR detectionQuality (and it's not a live session that's still running)
+                     if viewModel.displayFeedbackItems.allSatisfy({ $0.type == .positive || $0.type == .detectionQuality }) {
+                         // If it's just one positive "overall good" message, positiveFeedbackSummaryRow might be good.
+                         // If it's multiple positive points, iterating is better.
+                         if viewModel.displayFeedbackItems.count == 1 && viewModel.displayFeedbackItems.first?.type == .positive {
+                            positiveFeedbackSummaryRow(items: viewModel.displayFeedbackItems)
+                         } else {
+                            // Iterate even for multiple positive items or detection quality items
+                            ForEach(viewModel.displayFeedbackItems.sorted(by: feedbackSortOrder)) { item in
+                                 feedbackListRow(item: item)
+                             }
+                         }
+                     } else { // Mix of items, or constructive items present
                          ForEach(viewModel.displayFeedbackItems.filter { $0.type != .positive }.sorted(by: feedbackSortOrder)) { item in
                              feedbackListRow(item: item)
                          }
-                         // Optionally, add positive items at the end if any
                          let positiveItems = viewModel.displayFeedbackItems.filter { $0.type == .positive }
                          if !positiveItems.isEmpty {
                              ForEach(positiveItems.sorted(by: feedbackSortOrder)) { item in
@@ -315,8 +351,9 @@ struct VisionView: View {
                          }
                      }
                  } header: {
-                     Text(viewModel.currentMode == .videoUpload ? "Video Analysis Summary" : "Live Session Summary")
+                     Text(viewModel.currentMode == .videoUpload ? "Video Analysis Summary" : "Live Session Squat Summary") // Header is more specific
                          .font(.headline)
+                         .padding(.top)
                  }
              }
              .listStyle(.insetGrouped)
@@ -328,7 +365,7 @@ struct VisionView: View {
         }
     }
 
-    // feedbackSortOrder remains the same (as in your VisionView.txt source: 190-191)
+
     private func feedbackSortOrder(item1: FeedbackItem, item2: FeedbackItem) -> Bool {
         let priority: [FeedbackItem.FeedbackType: Int] = [
             .depth: 1, .kneeValgus: 2, .torsoAngle: 3, .ascentRate: 4, .heelLift: 5, .detectionQuality: 6, .liveInstruction: 7, .repComplete: 8, .positive: 99
@@ -336,7 +373,6 @@ struct VisionView: View {
         return (priority[item1.type] ?? 100) < (priority[item2.type] ?? 100)
     }
 
-    // feedbackListRow remains the same (as in your VisionView.txt source: 192-197)
     @ViewBuilder
     private func feedbackListRow(item: FeedbackItem) -> some View {
          Button {
@@ -361,7 +397,7 @@ struct VisionView: View {
          .buttonStyle(.plain)
      }
 
-    // positiveFeedbackSummaryRow modified to take items (as in your VisionView.txt source: 198-201)
+    // positiveFeedbackSummaryRow modified to take items
     @ViewBuilder
     private func positiveFeedbackSummaryRow(items: [FeedbackItem]) -> some View {
         HStack(spacing: 12) {
@@ -377,8 +413,6 @@ struct VisionView: View {
         .padding(.vertical, 6)
     }
 
-    // feedbackIcon and feedbackIconColor remain the same (as in your VisionView.txt source: 201-203)
-    // (adding new cases if you added them to FeedbackType enum)
     private func feedbackIcon(for type: FeedbackItem.FeedbackType) -> Image {
         switch type {
         case .depth: return Image(systemName: "arrow.down.to.line.compact")

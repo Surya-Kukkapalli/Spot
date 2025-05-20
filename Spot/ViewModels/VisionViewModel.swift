@@ -35,6 +35,8 @@ class VisionViewModel: NSObject, ObservableObject {
     @Published var currentLiveFeedback: LiveFeedback?
     @Published var repCount: Int = 0
     @Published var liveSummaryFeedbackItems: [FeedbackItem] = [] // For summary after live session
+    @Published var isSwitchingCamera: Bool = false // <<<< For loading state
+    @Published var analysisCompletedForLive: Bool = false
 
     // MARK: - Common Published Properties
     @Published var statusMessage: String = "Select mode and video, or start live session."
@@ -77,6 +79,7 @@ class VisionViewModel: NSObject, ObservableObject {
         super.init()
         setupDebouncerForVideoUpload()
         checkCameraPermission() // Check permission on init
+        analysisCompletedForLive = false
     }
 
     private func setupDebouncerForVideoUpload() {
@@ -93,6 +96,7 @@ class VisionViewModel: NSObject, ObservableObject {
     func switchMode(to mode: AnalysisMode) {
         if isLiveSessionRunning { stopLiveAnalysis() }
         if isProcessing && currentMode == .videoUpload { /* Maybe cancel? For now, let it finish */ }
+        analysisCompletedForLive = false
         
         currentMode = mode
         resetAllState() // Reset states when switching modes
@@ -223,84 +227,35 @@ class VisionViewModel: NSObject, ObservableObject {
     func setupCaptureSessionIfNeeded() {
         guard isCameraPermissionGranted, !isCaptureSessionConfigured else {
             if !isCameraPermissionGranted {
-                print("Camera permission not granted, cannot setup session.")
-                statusMessage = "Enable camera access in Settings for live mode."
+                DispatchQueue.main.async { self.statusMessage = "Enable camera access in Settings for live mode."}
             }
             return
         }
-
-        sessionQueue.async { [weak self] in // Perform setup on the session queue
-            guard let self = self else { return }
-            self.captureSession.beginConfiguration()
-            self.captureSession.sessionPreset = .hd1280x720 // Or another preset, consider performance
-
-            // Input
-            guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: self.currentCameraPosition) else {
-                print("Failed to get video device for position: \(self.currentCameraPosition)")
-                self.captureSession.commitConfiguration()
-                DispatchQueue.main.async { self.updateStatus("Error: Could not access camera.", isError: true) }
-                return
-            }
-            do {
-                let videoInput = try AVCaptureDeviceInput(device: videoDevice)
-                if self.captureSession.canAddInput(videoInput) {
-                    // Remove existing inputs before adding a new one, especially if switching cameras
-                    self.captureSession.inputs.forEach { self.captureSession.removeInput($0) }
-                    self.captureSession.addInput(videoInput)
-                } else {
-                    print("Cannot add video input to session.")
-                    self.captureSession.commitConfiguration()
-                    DispatchQueue.main.async { self.updateStatus("Error: Could not add camera input.", isError: true) }
-                    return
-                }
-            } catch {
-                print("Error creating video input: \(error)")
-                self.captureSession.commitConfiguration()
-                DispatchQueue.main.async { self.updateStatus("Error: Camera input creation failed.", isError: true) }
-                return
-            }
-
-            // Output
-            if self.captureSession.canAddOutput(self.videoDataOutput) {
-                 self.captureSession.outputs.forEach { self.captureSession.removeOutput($0) } // Clear old outputs
-                self.captureSession.addOutput(self.videoDataOutput)
-                self.videoDataOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)]
-                self.videoDataOutput.alwaysDiscardsLateVideoFrames = true // Crucial for real-time
-                self.videoDataOutput.setSampleBufferDelegate(self, queue: self.videoDataOutputQueue)
-                 // Set video orientation
-                if let connection = self.videoDataOutput.connection(with: .video) {
-                    if connection.isVideoOrientationSupported {
-                        // Get current device orientation. For simplicity, assuming portrait.
-                        // This might need to adapt to device orientation changes.
-                        connection.videoOrientation = .portrait
-                    }
-                    if connection.isVideoMirroringSupported && self.currentCameraPosition == .front {
-                         connection.isVideoMirrored = true
-                    } else if connection.isVideoMirroringSupported && self.currentCameraPosition == .back {
-                        connection.isVideoMirrored = false // Usually not mirrored for back camera
+        
+        sessionQueue.async { [weak self] in
+            self?.configureCamera(for: self?.currentCameraPosition ?? .front) { success in // Use current or default
+                DispatchQueue.main.async {
+                    if success {
+                        self?.statusMessage = "Camera ready for live session."
+                    } else {
+                        self?.statusMessage = "Error: Camera setup failed."
                     }
                 }
-            } else {
-                print("Cannot add video data output to session.")
-                self.captureSession.commitConfiguration()
-                DispatchQueue.main.async { self.updateStatus("Error: Could not add camera output.", isError: true) }
-                return
             }
-
-            self.captureSession.commitConfiguration()
-            self.isCaptureSessionConfigured = true // Mark as configured
-            print("Capture session configured.")
-             DispatchQueue.main.async { self.updateStatus("Camera ready for live session.", isError: false) }
         }
     }
     
     func toggleCamera() {
-        guard isCameraPermissionGranted else { return }
+        guard isCameraPermissionGranted, !isSwitchingCamera else { return } // Prevent multiple toggles
+        
+        isSwitchingCamera = true // <<<< SET LOADING STATE
+        statusMessage = "Switching camera..."
+        
         let newPosition: AVCaptureDevice.Position = (currentCameraPosition == .front) ? .back : .front
         
         // If session is running, stop it before reconfiguring
         let wasRunning = isLiveSessionRunning
-        if wasRunning { stopLiveAnalysis(isSwitchingCamera: true) }
+        if wasRunning { stopLiveAnalysis(isSwitchingCamera: true) } // Stop session without changing summary
         
         currentCameraPosition = newPosition
         isCaptureSessionConfigured = false // Force reconfiguration with new camera
@@ -313,17 +268,98 @@ class VisionViewModel: NSObject, ObservableObject {
             self.captureSession.outputs.forEach { self.captureSession.removeOutput($0) }
             self.captureSession.commitConfiguration()
 
-            self.setupCaptureSessionIfNeeded() // Re-setup with the new camera
-            
-            if wasRunning { // Restart session if it was running
-                self.startLiveAnalysis()
+            // Re-setup capture session (this is already on sessionQueue)
+            // The original setupCaptureSessionIfNeeded checks permission and config status.
+            // We need to ensure it updates status and isSwitchingCamera upon completion or failure.
+
+            // Directly call the configuration logic for the new camera
+            self.configureCamera(for: newPosition) { success in
+                DispatchQueue.main.async {
+                    self.isSwitchingCamera = false // <<<< CLEAR LOADING STATE
+                    if success {
+                        self.statusMessage = "Camera switched to \(newPosition == .front ? "front" : "back")."
+                        if wasRunning { // Restart session if it was running
+                            self.startLiveAnalysis()
+                        }
+                    } else {
+                        self.statusMessage = "Failed to switch camera. Using previous."
+                        // Optionally, try to revert to the old camera position or handle error
+                        // For simplicity, we'll assume user can try again.
+                    }
+                }
             }
         }
     }
 
+    // Extracted camera configuration logic to be called by setupCaptureSessionIfNeeded and toggleCamera
+    private func configureCamera(for position: AVCaptureDevice.Position, completion: @escaping (Bool) -> Void) {
+        // This function should run on self.sessionQueue
+        guard isCameraPermissionGranted else {
+            print("Camera permission not granted for configuration.")
+            completion(false)
+            return
+        }
+        
+        captureSession.beginConfiguration()
+        // Remove existing inputs before adding a new one
+        captureSession.inputs.forEach { captureSession.removeInput($0) }
+
+        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
+            print("Failed to get video device for position: \(position)")
+            captureSession.commitConfiguration()
+            completion(false)
+            return
+        }
+        do {
+            let videoInput = try AVCaptureDeviceInput(device: videoDevice)
+            if captureSession.canAddInput(videoInput) {
+                captureSession.addInput(videoInput)
+                self.currentCameraPosition = position // Update current position
+            } else {
+                print("Cannot add video input to session for position: \(position).")
+                captureSession.commitConfiguration()
+                completion(false)
+                return
+            }
+        } catch {
+            print("Error creating video input for \(position): \(error)")
+            captureSession.commitConfiguration()
+            completion(false)
+            return
+        }
+
+        // Output (ensure it's added only once or re-added correctly)
+        if !captureSession.outputs.contains(videoDataOutput) { // Add if not already there
+            if captureSession.canAddOutput(videoDataOutput) {
+                captureSession.addOutput(videoDataOutput)
+            } else {
+                 print("Cannot add video data output to session during configureCamera.")
+                 captureSession.commitConfiguration()
+                 completion(false)
+                 return
+            }
+        }
+        // Always (re)configure output settings
+        videoDataOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)]
+        videoDataOutput.alwaysDiscardsLateVideoFrames = true
+        videoDataOutput.setSampleBufferDelegate(self, queue: videoDataOutputQueue)
+        
+        if let connection = videoDataOutput.connection(with: .video) {
+            if connection.isVideoOrientationSupported { connection.videoOrientation = .portrait }
+            if connection.isVideoMirroringSupported {
+                connection.isVideoMirrored = (position == .front)
+            }
+        }
+
+        captureSession.commitConfiguration()
+        isCaptureSessionConfigured = true
+        print("Capture session configured for \(position) camera.")
+        completion(true)
+    }
 
     func startLiveAnalysis() {
-        guard currentMode == .liveCamera, isCameraPermissionGranted, isCaptureSessionConfigured else {
+        guard currentMode == .liveCamera, isCameraPermissionGranted, isCaptureSessionConfigured, !isSwitchingCamera else {
+            if isSwitchingCamera { statusMessage = "Please wait, camera is switching." }
             if !isCameraPermissionGranted { updateStatus("Enable camera access in Settings.", isError: true)}
             else if !isCaptureSessionConfigured { updateStatus("Camera not ready. Try again.", isError: true); setupCaptureSessionIfNeeded() }
             return
@@ -339,12 +375,14 @@ class VisionViewModel: NSObject, ObservableObject {
         displayFeedbackItems = [] // Clear main display
         repCount = 0
         poseAnalyzer.cleanupLiveAnalysisState() // Reset analyzer's internal live state
+        self.analysisCompletedForLive = false
 
         updateStatus("Live session starting...", isError: false)
         sessionQueue.async { [weak self] in
             self?.captureSession.startRunning()
-            DispatchQueue.main.async {
-                 self?.updateStatus("Live session active. Reps: 0", isError: false)
+            // Update status message
+            DispatchQueue.main.async { [weak self] in
+                 self?.statusMessage = "Live session active. Reps: 0"
             }
         }
     }
@@ -354,28 +392,85 @@ class VisionViewModel: NSObject, ObservableObject {
         
         isProcessing = false
         isLiveSessionRunning = false
-        // analysisCompleted could be set to true if a workout was "completed"
 
         sessionQueue.async { [weak self] in
             self?.captureSession.stopRunning()
             DispatchQueue.main.async { [weak self] in
-                 guard let self = self else { return }
-                if !isSwitchingCamera { // Don't update status if just switching camera internally
-                    self.updateStatus("Live session stopped. Total Reps: \(self.repCount)", isError: false)
-                    // Populate displayFeedbackItems with the summary from live session
-                    self.displayFeedbackItems = self.liveSummaryFeedbackItems.map { item -> FeedbackItem in
+                guard let self = self else { return }
+                
+                var finalSummaryItems: [FeedbackItem] = []
+
+                if !isSwitchingCamera {
+                    // 1. Process all accumulated feedback items from the live session
+                    let allRepFeedbackWithDetails = self.liveSummaryFeedbackItems.map { item -> FeedbackItem in
                         var mutableItem = item
-                        self.populateDetailedFeedback(for: &mutableItem)
+                        self.populateDetailedFeedback(for: &mutableItem) // Ensure details are populated
                         return mutableItem
                     }
-                    if self.displayFeedbackItems.isEmpty && self.repCount > 0 {
-                        self.displayFeedbackItems.append(FeedbackItem(type: .positive, message: "Session complete! You did \(self.repCount) reps.", frameIndex: nil, timestamp: nil))
-                    } else if self.repCount == 0 {
-                         self.displayFeedbackItems.append(FeedbackItem(type: .detectionQuality, message: "No reps completed in the session.", frameIndex: nil, timestamp: nil))
+
+                    // 2. Separate constructive items from purely positive ones (excluding .repComplete for summary)
+                    let constructiveFeedback = allRepFeedbackWithDetails.filter {
+                        $0.type != .positive && $0.type != .repComplete && $0.type != .detectionQuality // Keep detection quality if it's an issue
                     }
+                    
+                    let positiveRepFeedback = allRepFeedbackWithDetails.filter { $0.type == .positive }
+                    let detectionIssues = allRepFeedbackWithDetails.filter { $0.type == .detectionQuality }
+
+
+                    if self.repCount > 0 {
+                        if !constructiveFeedback.isEmpty {
+                            // If there's constructive feedback, prioritize showing it.
+                            // Also include any specific positive notes that came with those reps.
+                            finalSummaryItems.append(contentsOf: constructiveFeedback)
+                            // Add positive feedback that might have been for specific parts of reps with issues
+                            finalSummaryItems.append(contentsOf: positiveRepFeedback)
+                            // Also add any general detection issues if they occurred during reps
+                            finalSummaryItems.append(contentsOf: detectionIssues)
+                            
+                            self.statusMessage = "Session complete! Review your summary. Reps: \(self.repCount)"
+                        } else if !positiveRepFeedback.isEmpty {
+                            // No constructive feedback, but there were positive notes from reps
+                            finalSummaryItems.append(contentsOf: positiveRepFeedback)
+                            // Also add any general detection issues if they occurred during reps
+                            finalSummaryItems.append(contentsOf: detectionIssues)
+                            self.statusMessage = "Great session! Check out your positive feedback. Reps: \(self.repCount)"
+                        } else {
+                            // Reps were done, but no specific constructive or positive feedback items were generated
+                            // (e.g., if analyzeLiveRep only returned .repComplete, or an unexpected empty array)
+                            // This is a fallback to ensure something positive is shown.
+                            var overallGoodFormItem = FeedbackItem(
+                                type: .positive,
+                                message: "Excellent work! You completed \(self.repCount) reps with good overall consistency.",
+                                frameIndex: nil, timestamp: nil
+                            )
+                            self.populateDetailedFeedback(for: &overallGoodFormItem)
+                            finalSummaryItems.append(overallGoodFormItem)
+                             // Also add any general detection issues if they occurred during reps
+                            finalSummaryItems.append(contentsOf: detectionIssues)
+                            self.statusMessage = "Fantastic job on your \(self.repCount) reps! Summary below."
+                        }
+                    } else { // No reps completed
+                        if !detectionIssues.isEmpty {
+                            finalSummaryItems.append(contentsOf: detectionIssues)
+                            self.statusMessage = "Session ended. Some issues detected with setup or visibility."
+                        } else {
+                            var noRepsItem = FeedbackItem(
+                                type: .detectionQuality,
+                                message: "No full squat repetitions were detected during the session.",
+                                frameIndex: nil, timestamp: nil
+                            )
+                            self.populateDetailedFeedback(for: &noRepsItem)
+                            finalSummaryItems.append(noRepsItem)
+                            self.statusMessage = "Session ended. No reps recorded."
+                        }
+                    }
+                    // Remove duplicates just in case, prioritizing constructive then positive
+                    self.displayFeedbackItems = finalSummaryItems.removingDuplicates()
+                    print("displayFeedbackItems count: \(self.displayFeedbackItems.count)")
+                    self.analysisCompletedForLive = true
                 }
-                self.currentLiveFeedback = nil
-                // self.livePoseOverlayPoints = nil // Keep last frame for a moment? or clear
+                
+                self.currentLiveFeedback = nil // Clear any lingering real-time message
             }
         }
     }
@@ -458,6 +553,7 @@ class VisionViewModel: NSObject, ObservableObject {
         selectedFrameImage = nil
         errorMessage = nil
         showErrorAlert = false
+        analysisCompletedForLive = false
         
         // Video upload specific reset
         resetVideoUploadOnlyState()
@@ -658,5 +754,15 @@ struct VideoItem: Transferable {
 extension Optional where Wrapped == String {
     var isNilOrEmpty: Bool {
         return self?.isEmpty ?? true
+    }
+}
+
+// Helper to remove duplicates from FeedbackItem array, keeping the first occurrence
+extension Array where Element: Hashable {
+    func removingDuplicates() -> [Element] {
+        var addedDict = [Element: Bool]()
+        return filter {
+            addedDict.updateValue(true, forKey: $0) == nil
+        }
     }
 }
