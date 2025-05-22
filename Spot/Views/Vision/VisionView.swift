@@ -95,6 +95,19 @@ struct VisionView: View {
 
         videoUploadControlButtons()
             .padding(.bottom, 5)
+        
+        // Add this new button conditionally
+        if viewModel.currentMode == .videoUpload && viewModel.analysisCompleted && !viewModel.displayFeedbackItems.isEmpty && !viewModel.isProcessing {
+            Button {
+                viewModel.showLiveSummarySheet = true // Trigger the sheet
+            } label: {
+                Label("View Video Feedback Summary", systemImage: "list.bullet.clipboard.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.horizontal)
+            .padding(.bottom, 10) // Add some spacing
+        }
     }
 
     @ViewBuilder
@@ -334,26 +347,37 @@ struct VisionView: View {
         // --- Step 1: Compute your state variables ---
         // Use a small, immediately-executed closure to determine these values.
         let (itemsToDisplay, summaryTitle, currentItemCountForLog): ([FeedbackItem], String, Int) = {
-            if viewModel.showLiveSummarySheet { // Sheet is specifically for the live summary
-                let items = viewModel.liveSummaryFeedbackItems
-                let title = "Live Session Squat Summary"
-                let count = items.count
-                // It's okay to keep prints here for debugging during development
-                print("commonFeedbackDisplayView (Values Logic): Mode=LiveSheet, ItemsSource=liveSummaryFeedbackItems, Count=\(count)")
-                return (items, title, count)
-            } else if viewModel.currentMode == .videoUpload && viewModel.analysisCompleted {
-                let items = viewModel.displayFeedbackItems
-                let title = "Video Analysis Summary"
-                let count = items.count
-                print("commonFeedbackDisplayView (Values Logic): Mode=VideoUpload, ItemsSource=displayFeedbackItems, Count=\(count)")
-                return (items, title, count)
-            } else {
-                let items: [FeedbackItem] = [] // Explicitly type if needed for clarity
-                let title = "Summary"
-                let count = 0
-                print("commonFeedbackDisplayView (Values Logic): Mode=Fallback, Count=\(count)")
-                return (items, title, count)
-            }
+                    if viewModel.showLiveSummarySheet { // Sheet is presented
+                        let items: [FeedbackItem]
+                        let title: String
+                        // Check if the sheet is for video upload mode
+                        if viewModel.currentMode == .videoUpload {
+                            items = viewModel.displayFeedbackItems // Use feedback from video analysis
+                            title = "Video Analysis Summary"
+                        } else { // Otherwise, it's for live camera summary
+                            items = viewModel.liveSummaryFeedbackItems
+                            title = "Live Session Squat Summary"
+                        }
+                        let count = items.count
+                        // Updated print statement for clarity
+                        print("commonFeedbackDisplayView (Values Logic): Mode=Sheet (Mode: \(viewModel.currentMode)), ItemsSource=\(viewModel.currentMode == .videoUpload ? "displayFeedbackItems" : "liveSummaryFeedbackItems"), Count=\(count)")
+                        return (items, title, count)
+                    } else if viewModel.currentMode == .videoUpload && viewModel.analysisCompleted {
+                        // This branch is for when commonFeedbackDisplayView might be embedded directly
+                        // (though we are aiming for a sheet-based approach here by adding a button)
+                        let items = viewModel.displayFeedbackItems
+                   let title = "Video Analysis Summary"
+                        let count = items.count
+                        print("commonFeedbackDisplayView (Values Logic): Mode=VideoUploadEmbedded, ItemsSource=displayFeedbackItems, Count=\(count)")
+                        return (items, title, count)
+                    } else {
+             let items: [FeedbackItem] = []
+                        // Provide a more specific title if possible
+                        let title = (viewModel.currentMode == .liveCamera && !viewModel.analysisCompletedForLive) ? "Live Session Pending" : "Summary Not Available"
+                        let count = 0
+                        print("commonFeedbackDisplayView (Values Logic): Mode=Fallback, Count=\(count)")
+                        return (items, title, count)
+             }
         }() // The '()' executes the closure immediately
 
         // --- Step 2: Determine if the summary should be shown based on the computed items ---
@@ -488,7 +512,8 @@ struct VisionView: View {
             FeedbackDetailSheet(
                 item: item,
                 frameImage: frameImage,
-                isLoadingImage: isLoadingImage // Pass loading state
+                isLoadingImage: isLoadingImage, // Pass loading state
+                viewModel: viewModel // Passing the ViewModel
             )
             .onAppear {
                 // Only load image if it's a video item with a timestamp and image hasn't been loaded
@@ -673,11 +698,10 @@ struct PoseOverlayView: View {
 
 // MARK: - Detail Sheet View (New/Modified)
 struct FeedbackDetailSheet: View {
-    @StateObject private var viewModel = VisionViewModel()
-
     let item: FeedbackItem
     let frameImage: UIImage?
     let isLoadingImage: Bool // New property to indicate image loading status
+    @ObservedObject var viewModel: VisionViewModel // receive viewModel
 
     @Environment(\.dismiss) var dismiss
 
