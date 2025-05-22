@@ -37,6 +37,7 @@ class VisionViewModel: NSObject, ObservableObject {
     @Published var liveSummaryFeedbackItems: [FeedbackItem] = [] // For summary after live session
     @Published var isSwitchingCamera: Bool = false // <<<< For loading state
     @Published var analysisCompletedForLive: Bool = false
+    @Published var showLiveSummarySheet: Bool = false
 
     // MARK: - Common Published Properties
     @Published var statusMessage: String = "Select mode and video, or start live session."
@@ -49,14 +50,14 @@ class VisionViewModel: NSObject, ObservableObject {
     // Frame Sheet State & Selected Item for Detail (remains useful for both)
     @Published var selectedFeedbackItem: FeedbackItem? = nil
     @Published var selectedFrameImage: UIImage? = nil
-    @Published var showFrameSheet: Bool = false {
-        didSet {
-            if !showFrameSheet {
-                selectedFeedbackItem = nil
-                selectedFrameImage = nil
-            }
-        }
-    }
+//    @Published var showFrameSheet: Bool = false {
+//        didSet {
+//            if !showFrameSheet {
+//                selectedFeedbackItem = nil
+//                selectedFrameImage = nil
+//            }
+//        }
+//    }
 
     // Error Handling (remains useful)
     @Published var errorMessage: String? = nil
@@ -468,6 +469,20 @@ class VisionViewModel: NSObject, ObservableObject {
                     self.displayFeedbackItems = finalSummaryItems.removingDuplicates()
                     print("displayFeedbackItems count: \(self.displayFeedbackItems.count)")
                     self.analysisCompletedForLive = true
+                    // Populate the dedicated array for the live summary sheet
+                    self.liveSummaryFeedbackItems = finalSummaryItems.removingDuplicates()
+                    print("ViewModel: liveSummaryFeedbackItems populated. Count: \(self.liveSummaryFeedbackItems.count)")
+                    
+                    // Optionally, if displayFeedbackItems is ALSO used by another part of the UI
+                    // that should show the live summary immediately, you can set it here too.
+                    // But for the sheet, we will explicitly use liveSummaryFeedbackItems.
+                    self.displayFeedbackItems = self.liveSummaryFeedbackItems
+                    
+                    //self.displayFeedbackItems = [] // Clear direct display items or decide if you still need this for other modes
+
+                    self.analysisCompletedForLive = true // Mark that summary is ready
+                    self.showLiveSummarySheet = true // Triggers the sheet
+                    self.statusMessage = "Session complete! Tap 'View Summary'. Reps: \(self.repCount)"
                 }
                 
                 self.currentLiveFeedback = nil // Clear any lingering real-time message
@@ -477,44 +492,44 @@ class VisionViewModel: NSObject, ObservableObject {
 
 
     // MARK: - Common Methods (Feedback Detail, Cleanup)
-    func selectFeedbackItemForDetail(_ feedback: FeedbackItem) {
-        // This function can remain largely the same as in your existing code,
-        // as it's used for showing details of any FeedbackItem.
-        // (as in your VisionViewModel.txt source: 308-312)
-        // Ensure it works with timestamps from both video and potentially logged live feedback.
-        // If live feedback items don't have a specific frame image to show from a video,
-        // this might behave differently (e.g., not show an image or show a generic illustration).
-        
-        guard feedback.timestamp != nil || feedback.type == .detectionQuality || !feedback.detailedExplanation.isNilOrEmpty else {
-             print("No timestamp or detailed explanation available for this feedback item. Cannot show details effectively.")
-             // For live feedback without a specific image, you might still want to show the text details.
-             if !feedback.detailedExplanation.isNilOrEmpty {
-                 self.selectedFeedbackItem = feedback
-                 self.selectedFrameImage = nil // No specific frame image
-                 self.showFrameSheet = true
-             }
-             return
-         }
-
-        self.selectedFeedbackItem = feedback
-        self.selectedFrameImage = nil // Clear previous
-        self.showFrameSheet = true
-
-        if let ts = feedback.timestamp, currentMode == .videoUpload { // Only fetch from video if in that mode and ts exists
-            Task {
-                let image = await poseAnalyzer.fetchFrameImage(at: ts)
-                if self.selectedFeedbackItem?.id == feedback.id { // Still the same item
-                    self.selectedFrameImage = image
-                }
-                if image == nil { print("Failed to load frame image for time \(ts.seconds ?? -1).") }
-            }
-        } else if let ts = feedback.timestamp, currentMode == .liveCamera {
-            // For live, if you cached the CVPixelBuffer that triggered this feedback, you could convert it to UIImage here.
-            // Or, if 'livePoseOverlayPoints' corresponds to this feedback, you might want to render a static image of that pose.
-            // For now, we assume live feedback details won't have a specific historical frame image like video.
-             print("Showing details for live feedback. Frame image not typically fetched from video generator.")
-        }
-    }
+//    func selectFeedbackItemForDetail(_ feedback: FeedbackItem) {
+//        // This function can remain largely the same as in your existing code,
+//        // as it's used for showing details of any FeedbackItem.
+//        // (as in your VisionViewModel.txt source: 308-312)
+//        // Ensure it works with timestamps from both video and potentially logged live feedback.
+//        // If live feedback items don't have a specific frame image to show from a video,
+//        // this might behave differently (e.g., not show an image or show a generic illustration).
+//        
+//        guard feedback.timestamp != nil || feedback.type == .detectionQuality || !feedback.detailedExplanation.isNilOrEmpty else {
+//             print("No timestamp or detailed explanation available for this feedback item. Cannot show details effectively.")
+//             // For live feedback without a specific image, you might still want to show the text details.
+//             if !feedback.detailedExplanation.isNilOrEmpty {
+//                 self.selectedFeedbackItem = feedback
+//                 self.selectedFrameImage = nil // No specific frame image
+//                 self.showFrameSheet = true
+//             }
+//             return
+//         }
+//
+//        self.selectedFeedbackItem = feedback
+//        self.selectedFrameImage = nil // Clear previous
+//        self.showFrameSheet = true
+//
+//        if let ts = feedback.timestamp, currentMode == .videoUpload { // Only fetch from video if in that mode and ts exists
+//            Task {
+//                let image = await poseAnalyzer.fetchFrameImage(at: ts)
+//                if self.selectedFeedbackItem?.id == feedback.id { // Still the same item
+//                    self.selectedFrameImage = image
+//                }
+//                if image == nil { print("Failed to load frame image for time \(ts.seconds ?? -1).") }
+//            }
+//        } else if let ts = feedback.timestamp, currentMode == .liveCamera {
+//            // For live, if you cached the CVPixelBuffer that triggered this feedback, you could convert it to UIImage here.
+//            // Or, if 'livePoseOverlayPoints' corresponds to this feedback, you might want to render a static image of that pose.
+//            // For now, we assume live feedback details won't have a specific historical frame image like video.
+//             print("Showing details for live feedback. Frame image not typically fetched from video generator.")
+//        }
+//    }
     
     // cleanupResources now also handles camera session
     // (Adapted from your VisionViewModel.txt source: 312)
@@ -683,6 +698,26 @@ class VisionViewModel: NSObject, ObservableObject {
             item.potentialCauses = "N/A"
             item.correctiveSuggestions = "Prepare for the next repetition, maintaining good form."
         }
+    }
+    
+    // Ensure this function is part of your VisionViewModel class
+    func fetchFrameImageForItem(_ item: FeedbackItem) async -> UIImage? {
+        guard let ts = item.timestamp else {
+            print("ViewModel: No timestamp for item \(item.type.rawValue) to fetch image.")
+            return nil
+        }
+        // Only fetch if it's from a video analysis context
+        guard currentMode == .videoUpload else {
+            print("ViewModel: Frame image fetching is intended for video upload mode. Current mode: \(currentMode) for item \(item.type.rawValue)")
+            return nil
+        }
+
+        // 'poseAnalyzer' is an instance property of VisionViewModel
+        let image = await poseAnalyzer.fetchFrameImage(at: ts) // This calls the method on PoseAnalyzer
+        if image == nil {
+            print("ViewModel: Failed to load frame image for item \(item.id) at time \(ts.seconds ?? -1).")
+        }
+        return image
     }
 }
 

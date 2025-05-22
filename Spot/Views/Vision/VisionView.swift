@@ -29,21 +29,32 @@ struct VisionView: View {
                     statusMessageView() // Shows general status
 
                     // --- Common Feedback List (for video summary or live session summary) ---
-                    // Renamed from feedbackListView to commonFeedbackDisplayView
-                    commonFeedbackDisplayView()
-                        .frame(height: 200) // Temporary for testing
-                        .background(Color.yellow) // Temporary for testing
+//                    commonFeedbackDisplayView()
+//                        .frame(height: 200) // Temporary for testing
+//                        .background(Color.yellow) // Temporary for testing
 
                     Spacer()
                 }
                 .padding(.bottom)
                 .frame(minHeight: geometry.size.height) // Ensure content can fill screen
             }
+            .sheet(isPresented: $viewModel.showLiveSummarySheet) {
+                // wrap commonFeedbackDisplayView in a NavigationView for a title
+                NavigationView {
+                    commonFeedbackDisplayView() // This will now be presented in a sheet
+                        .navigationTitle(viewModel.currentMode == .videoUpload ? "Video Summary" : "Live Session Summary")
+                        .navigationBarItems(trailing: Button("Done") {
+                            viewModel.showLiveSummarySheet = false
+                        })
+                }
+            }
         }
         .navigationTitle("Form Analyzer")
         .background(Color(.systemGroupedBackground).ignoresSafeArea(.all, edges: .bottom))
-        .sheet(item: $viewModel.selectedFeedbackItem) { item in
-            FeedbackDetailSheet(item: item, frameImage: viewModel.selectedFrameImage)
+        .sheet(item: $viewModel.selectedFeedbackItem) { itemToShowInSheet in
+            // Use the FeedbackDetailWrapperView here as well for consistency.
+            // This 'itemToShowInSheet' comes from whatever viewModel.selectedFeedbackItem was set to.
+            FeedbackDetailWrapperView(item: itemToShowInSheet, viewModel: viewModel)
         }
         .onDisappear {
             viewModel.cleanupResources() // Cleanup when view disappears
@@ -208,9 +219,21 @@ struct VisionView: View {
         .frame(height: geometry.size.width * (16/9)) // Match CameraPreviewView height
         .padding(.top)
 
-
         liveCameraControlButtons()
             .padding(.bottom, 5)
+        
+        // Summary Button for Live Mode
+        if viewModel.currentMode == .liveCamera && viewModel.analysisCompletedForLive && !viewModel.isLiveSessionRunning {
+            Button {
+                viewModel.showLiveSummarySheet = true
+            } label: {
+                Label("View Feedback Summary", systemImage: "list.bullet.clipboard.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(.horizontal)
+            .padding(.bottom, 10) // Add some spacing
+        }
     }
     
     @ViewBuilder
@@ -308,63 +331,122 @@ struct VisionView: View {
     // This view shows displayFeedbackItems, which is populated based on mode
     @ViewBuilder
     private func commonFeedbackDisplayView() -> some View {
-        let isVideoModeAndCompleted = viewModel.analysisCompleted && viewModel.currentMode == .videoUpload
-        // Corrected condition for live summary:
-        let isLiveModeAndSummaryReady = !viewModel.isLiveSessionRunning && viewModel.currentMode == .liveCamera && viewModel.analysisCompletedForLive
+        // --- Step 1: Compute your state variables ---
+        // Use a small, immediately-executed closure to determine these values.
+        let (itemsToDisplay, summaryTitle, currentItemCountForLog): ([FeedbackItem], String, Int) = {
+            if viewModel.showLiveSummarySheet { // Sheet is specifically for the live summary
+                let items = viewModel.liveSummaryFeedbackItems
+                let title = "Live Session Squat Summary"
+                let count = items.count
+                // It's okay to keep prints here for debugging during development
+                print("commonFeedbackDisplayView (Values Logic): Mode=LiveSheet, ItemsSource=liveSummaryFeedbackItems, Count=\(count)")
+                return (items, title, count)
+            } else if viewModel.currentMode == .videoUpload && viewModel.analysisCompleted {
+                let items = viewModel.displayFeedbackItems
+                let title = "Video Analysis Summary"
+                let count = items.count
+                print("commonFeedbackDisplayView (Values Logic): Mode=VideoUpload, ItemsSource=displayFeedbackItems, Count=\(count)")
+                return (items, title, count)
+            } else {
+                let items: [FeedbackItem] = [] // Explicitly type if needed for clarity
+                let title = "Summary"
+                let count = 0
+                print("commonFeedbackDisplayView (Values Logic): Mode=Fallback, Count=\(count)")
+                return (items, title, count)
+            }
+        }() // The '()' executes the closure immediately
 
-        // For the live summary to show, we need a clear signal that the live session
-        // has finished its "processing" of the summary.
-        // Let's adjust the condition. After stopLiveAnalysis, displayFeedbackItems will be populated.
-        
-//        let shouldShowSummary = (isVideoModeAndCompleted && !viewModel.displayFeedbackItems.isEmpty) ||
-//                                (!viewModel.isLiveSessionRunning && viewModel.currentMode == .liveCamera && !viewModel.displayFeedbackItems.isEmpty && viewModel.repCount >= 0) // repCount >= 0 ensures it was at least attempted or stopped
-        
-        // Show the list if either summary type is ready AND there are items to display
-        let shouldShowSummary =  (isVideoModeAndCompleted && !viewModel.displayFeedbackItems.isEmpty) ||
-           (isLiveModeAndSummaryReady && !viewModel.displayFeedbackItems.isEmpty)
+        // --- Step 2: Determine if the summary should be shown based on the computed items ---
+        let shouldShowSummaryBasedOnItems = !itemsToDisplay.isEmpty
+        // Optional: print the result of this check
+        //print("commonFeedbackDisplayView (Values Logic): shouldShowSummaryBasedOnItems = \(shouldShowSummaryBasedOnItems), FinalItemCountForUI = \(itemsToDisplay.count)")
 
+        // --- Step 3: Now, build your View structure using the computed values ---
+        if shouldShowSummaryBasedOnItems {
+            List {
+//                // DEBUG Section: Render all items from the chosen source
+//                Section(header: Text("Debug Info: Displaying \(itemsToDisplay.count) items for \(summaryTitle)")) {
+//                    if itemsToDisplay.isEmpty { // Should not happen if shouldShowSummaryBasedOnItems is true
+//                        Text("itemsToDisplay is unexpectedly empty here.")
+//                    } else {
+//                        ForEach(itemsToDisplay) { item in
+//                            VStack(alignment: .leading) {
+//                                Text("ID: \(item.id) | Type: \(item.type.rawValue)")
+//                                Text(item.message).font(.caption)
+//                            }
+//                            .padding(.vertical, 1)
+//                        }
+//                    }
+//                }
 
-        if shouldShowSummary {
-             List {
-                 Section {
-                     // If all items in displayFeedbackItems are positive OR detectionQuality (and it's not a live session that's still running)
-                     if viewModel.displayFeedbackItems.allSatisfy({ $0.type == .positive || $0.type == .detectionQuality }) {
-                         // If it's just one positive "overall good" message, positiveFeedbackSummaryRow might be good.
-                         // If it's multiple positive points, iterating is better.
-                         if viewModel.displayFeedbackItems.count == 1 && viewModel.displayFeedbackItems.first?.type == .positive {
-                            positiveFeedbackSummaryRow(items: viewModel.displayFeedbackItems)
-                         } else {
-                            // Iterate even for multiple positive items or detection quality items
-                            ForEach(viewModel.displayFeedbackItems.sorted(by: feedbackSortOrder)) { item in
-                                 feedbackListRow(item: item)
-                             }
-                         }
-                     } else { // Mix of items, or constructive items present
-                         ForEach(viewModel.displayFeedbackItems.filter { $0.type != .positive }.sorted(by: feedbackSortOrder)) { item in
-                             feedbackListRow(item: item)
-                         }
-                         let positiveItems = viewModel.displayFeedbackItems.filter { $0.type == .positive }
-                         if !positiveItems.isEmpty {
-                             ForEach(positiveItems.sorted(by: feedbackSortOrder)) { item in
-                                 feedbackListRow(item: item)
-                             }
-                         }
-                     }
-                 } header: {
-                     Text(viewModel.currentMode == .videoUpload ? "Video Analysis Summary" : "Live Session Squat Summary") // Header is more specific
-                         .font(.headline)
-                         .padding(.top)
-                 }
-             }
-             .listStyle(.insetGrouped)
-             .shrinkIfNeeded() // Your custom modifier
-             .padding(.horizontal)
-             .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 1)
-             .transition(.opacity.combined(with: .scale(scale: 0.95)))
-             .animation(.easeInOut, value: viewModel.displayFeedbackItems)
+                // Your original Section logic (using itemsToDisplay and summaryTitle)
+                Section { // Main content section
+                    if itemsToDisplay.allSatisfy({ $0.type == .positive || $0.type == .detectionQuality }) {
+                        if itemsToDisplay.count == 1 && itemsToDisplay.first?.type == .positive {
+                            positiveFeedbackSummaryRow(items: itemsToDisplay)
+                        } else {
+                            ForEach(itemsToDisplay.sorted(by: feedbackSortOrder)) { item in
+                                feedbackListRow(item: item)
+                            }
+                        }
+                    } else {
+                        // Constructive feedback items
+                        let constructiveItems = itemsToDisplay.filter { $0.type != .positive && $0.type != .detectionQuality }
+                        if !constructiveItems.isEmpty {
+                             Section(header: Text("Areas for Improvement")) {
+                                ForEach(constructiveItems.sorted(by: feedbackSortOrder)) { item in
+                                    feedbackListRow(item: item)
+                                }
+                            }
+                        }
+
+                        // Positive feedback items
+                        let positiveItems = itemsToDisplay.filter { $0.type == .positive }
+                        if !positiveItems.isEmpty {
+                            Section(header: Text("Good Points")) {
+                                ForEach(positiveItems.sorted(by: feedbackSortOrder)) { item in
+                                    feedbackListRow(item: item)
+                                }
+                            }
+                        }
+                         // Detection quality items
+                        let detectionItems = itemsToDisplay.filter { $0.type == .detectionQuality }
+                        if !detectionItems.isEmpty {
+                             Section(header: Text("Detection Notes")) {
+                                ForEach(detectionItems.sorted(by: feedbackSortOrder)) { item in
+                                    feedbackListRow(item: item)
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text(summaryTitle) // Use the determined title
+                        .font(.headline)
+                        .padding(.top)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .shrinkIfNeeded()
+            .padding(.horizontal)
+            .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 1)
+            .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            .animation(.easeInOut, value: itemsToDisplay)
+
+        } else {
+            // Fallback if no items to display for the determined context
+            VStack {
+                Text("\(summaryTitle) Not Available")
+                    .font(.headline)
+                Text("(No feedback items to display)")
+                    .font(.subheadline)
+                // Use the logged count variable here
+                Text("Debug: itemsToDisplay.count was \(currentItemCountForLog) when deciding.")
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.gray.opacity(0.1))
+            .padding()
         }
     }
-
 
     private func feedbackSortOrder(item1: FeedbackItem, item2: FeedbackItem) -> Bool {
         let priority: [FeedbackItem.FeedbackType: Int] = [
@@ -375,27 +457,69 @@ struct VisionView: View {
 
     @ViewBuilder
     private func feedbackListRow(item: FeedbackItem) -> some View {
-         Button {
-             viewModel.selectFeedbackItemForDetail(item)
-         } label: {
-             HStack(spacing: 12) {
-                 feedbackIcon(for: item.type)
-                     .font(.headline).foregroundColor(feedbackIconColor(for: item.type))
-                     .frame(width: 25, alignment: .center)
-                 VStack(alignment: .leading) {
-                     Text(item.type.rawValue).font(.callout.weight(.medium)).foregroundColor(.primary)
-                     Text(item.message).font(.caption).foregroundColor(.secondary).lineLimit(2) // Increased line limit
-                 }
-                 Spacer()
-                 if item.timestamp != nil || !item.detailedExplanation.isNilOrEmpty { // Show chevron if details can be shown
-                      Image(systemName: "chevron.right")
-                          .font(.footnote.weight(.semibold)).foregroundColor(.secondary.opacity(0.7))
-                  }
-             }
-             .padding(.vertical, 6)
-         }
-         .buttonStyle(.plain)
-     }
+        // NavigationLink will handle the presentation.
+        // The destination is a wrapper that will manage fetching the image.
+        NavigationLink(destination: FeedbackDetailWrapperView(item: item, viewModel: viewModel)) {
+            // This is the content of your row (the "label" of the NavigationLink)
+            HStack(spacing: 12) {
+                feedbackIcon(for: item.type)
+                    .font(.headline).foregroundColor(feedbackIconColor(for: item.type))
+                    .frame(width: 25, alignment: .center)
+                VStack(alignment: .leading) {
+                    Text(item.type.rawValue).font(.callout.weight(.medium)).foregroundColor(.primary)
+                    Text(item.message).font(.caption).foregroundColor(.secondary).lineLimit(2)
+                }
+                Spacer()
+                // The chevron is usually provided by NavigationLink when in a List
+            }
+            .padding(.vertical, 6)
+        }
+        // .buttonStyle(.plain) // May not be needed or could conflict; NavigationLink handles tap
+    }
+    
+    struct FeedbackDetailWrapperView: View {
+        let item: FeedbackItem
+        @ObservedObject var viewModel: VisionViewModel // Use ObservedObject as it's passed in
+
+        @State private var frameImage: UIImage? = nil
+        @State private var isLoadingImage: Bool = false
+
+        var body: some View {
+            FeedbackDetailSheet(
+                item: item,
+                frameImage: frameImage,
+                isLoadingImage: isLoadingImage // Pass loading state
+            )
+            .onAppear {
+                // Only load image if it's a video item with a timestamp and image hasn't been loaded
+                if item.timestamp != nil && frameImage == nil {
+                    loadImage()
+                }
+            }
+        }
+
+        private func loadImage() {
+            // The item itself is passed to fetchFrameImageForItem
+            guard item.timestamp != nil else {
+                print("WrapperView: Item \(item.type.rawValue) has no timestamp. No image to load.")
+                // isLoadingImage should ideally be set to false here if we decide not to load
+                // However, the primary guard in fetchFrameImageForItem on the ViewModel handles this.
+                // For clarity, ensure isLoadingImage is false if we bail early.
+                Task { await MainActor.run { self.isLoadingImage = false } }
+                return
+            }
+
+            self.isLoadingImage = true // Set loading true before the async task
+            Task {
+                // Corrected call to the ViewModel's method
+                let image = await viewModel.fetchFrameImageForItem(item)
+                await MainActor.run {
+                    self.frameImage = image
+                    self.isLoadingImage = false
+                }
+            }
+        }
+    }
 
     // positiveFeedbackSummaryRow modified to take items
     @ViewBuilder
@@ -547,48 +671,61 @@ struct PoseOverlayView: View {
     }
 }
 
-
-// FeedbackDetailSheet, ExpandableSection, ShrinkIfNeeded, HeightPreferenceKey remain the same
-// (as in your VisionView.txt file source: 204-232)
 // MARK: - Detail Sheet View (New/Modified)
 struct FeedbackDetailSheet: View {
-    let item: FeedbackItem // Passed in when sheet is presented
-    let frameImage: UIImage? // Passed in separately
     @StateObject private var viewModel = VisionViewModel()
-    @Environment(\.dismiss) var dismiss // To dismiss the sheet
+
+    let item: FeedbackItem
+    let frameImage: UIImage?
+    let isLoadingImage: Bool // New property to indicate image loading status
+
+    @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        NavigationView { // Embed in NavigationView for title and potential toolbar
+        // The NavigationView here is for THIS view's own title bar and Done button.
+        // It does NOT conflict with the NavigationView of the summary sheet.
+        NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     // Frame Image Section
-                    if item.timestamp != nil && frameImage != nil { // Only show image section if timestamp exists AND image loaded
+                    if item.timestamp != nil && viewModel.currentMode == .videoUpload { // Condition to show image section
                         VStack(alignment: .leading) {
                             Text("Relevant Frame (Video Analysis)")
                                 .font(.title3.weight(.semibold))
-                            if let image = frameImage {
+                            if isLoadingImage { // Check the passed-in loading state
+                                ProgressView("Loading Frame...")
+                                    .frame(maxWidth: .infinity).frame(height: 200)
+                                    .background(Color(.secondarySystemBackground))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            } else if let image = frameImage {
                                 Image(uiImage: image)
                                     .resizable().scaledToFit()
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.gray.opacity(0.3), lineWidth: 1))
+                            } else {
+                                // Case for when not loading, but no image (e.g., fetch failed or not applicable)
+                                Text("Frame image not available.")
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                    .frame(height: 100) // Adjust size as needed
+                                    .background(Color(.secondarySystemBackground).opacity(0.5))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .padding(.vertical, 50) // Give it some space
                             }
                         }
-                    } else if item.timestamp != nil && frameImage == nil && viewModel.currentMode == .videoUpload {
-                        // Show loading for video frame image
-                        ProgressView("Loading Frame...")
-                            .frame(maxWidth: .infinity).frame(height: 200)
-                            .background(Color(.secondarySystemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    } else if item.timestamp != nil && viewModel.currentMode == .liveCamera {
+                        // If it's live feedback that had a timestamp but we don't show frame images for it.
+                        // This section can be omitted or show a message.
+                        // For now, we only show images if it's video upload mode.
                     }
 
 
                     Divider()
 
-                    // Feedback Details Section
+                    // Feedback Details Section (remains mostly the same)
                     VStack(alignment: .leading, spacing: 15) {
                          Text(item.type.rawValue)
                              .font(.title2.weight(.semibold))
-                             .foregroundColor(feedbackIconColor(for: item.type, defaultColor: .primary)) // Use helper
+                             .foregroundColor(feedbackIconColor(for: item.type, defaultColor: .primary))
 
                          Text(item.message)
                              .font(.headline).foregroundColor(.primary)
@@ -597,7 +734,7 @@ struct FeedbackDetailSheet: View {
                              ExpandableSection(title: "What this means") { Text(explanation).font(.body) }
                          }
                          if let causes = item.potentialCauses, !causes.isEmpty, causes != "N/A" {
-                             ExpandableSection(title: "Potential Causes") { Text(causes).font(.body) }
+                            ExpandableSection(title: "Potential Causes") { Text(causes).font(.body) }
                          }
                          if let suggestions = item.correctiveSuggestions, !suggestions.isEmpty, suggestions != "N/A" {
                              ExpandableSection(title: "Corrective Suggestions") { Text(suggestions).font(.body) }
@@ -606,24 +743,28 @@ struct FeedbackDetailSheet: View {
                 }
                 .padding()
             }
-            .navigationTitle("Feedback Detail")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
+//            .navigationTitle("Feedback Detail")
+//            .navigationBarTitleDisplayMode(.inline)
+//            .toolbar {
+//                ToolbarItem(placement: .navigationBarTrailing) {
+//                    Button("Done") { dismiss() }
+//                }
+//            }
         }
+        // IMPORTANT: Prevent this NavigationView from interfering with the outer one for swipe gestures.
+        // This is only an issue if this sheet *itself* were presented with .sheet().
+        // When pushed, it's usually fine. Test swipe-back behavior.
+        // .navigationViewStyle(.stack) // Might be useful if you saw oddities, but often not needed.
     }
-    
-    // Helper from VisionView, could be moved to a common place
+
+    // Helper from VisionView, ensure it's accessible
     private func feedbackIconColor(for type: FeedbackItem.FeedbackType, defaultColor: Color) -> Color {
          switch type {
-         case .depth, .kneeValgus, .torsoAngle, .heelLift, .ascentRate: return .orange
-         case .detectionQuality: return .red
-         case .positive: return .green
-         case .liveInstruction: return .blue
-         case .repComplete: return .purple
+         case .depth, .kneeValgus, .torsoAngle, .heelLift, .ascentRate: return .orange // [cite: 266]
+         case .detectionQuality: return .red // [cite: 266]
+         case .positive: return .green // [cite: 266]
+         case .liveInstruction: return .blue // [cite: 266]
+         case .repComplete: return .purple // [cite: 266]
          default: return defaultColor
          }
      }

@@ -137,7 +137,7 @@ class PoseAnalyzer {
     }
 
     // fetchFrameImage remains the same (as in your provided PoseAnalyzer.txt source: 19-20)
-     func fetchFrameImage(at time: CMTime) async -> UIImage? {
+    func fetchFrameImage(at time: CMTime) async -> UIImage? {
          guard let generator = imageGenerator else { return nil }
          do {
              let cgImage = try await generator.copyCGImage(at: time, actualTime: nil)
