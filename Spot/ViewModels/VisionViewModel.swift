@@ -6,6 +6,7 @@ import PhotosUI
 import AVKit
 import Combine
 import Vision // For orientation if needed
+import AVFoundation
 
 @MainActor
 class VisionViewModel: NSObject, ObservableObject {
@@ -67,6 +68,7 @@ class VisionViewModel: NSObject, ObservableObject {
     private var poseAnalyzer = PoseAnalyzer()
     private let videoLoadDebouncer = PassthroughSubject<PhotosPickerItem?, Never>() // For video upload
     private var cancellables = Set<AnyCancellable>()
+    private let speechSynthesizer = AVSpeechSynthesizer()
 
     // --- Camera Specific ---
     let captureSession = AVCaptureSession() // Made public for CameraPreviewView
@@ -621,8 +623,6 @@ class VisionViewModel: NSObject, ObservableObject {
         }
     }
     
-    // populateDetailedFeedback remains the same
-    // (as in your VisionViewModel.txt source: 321-351)
     private func populateDetailedFeedback(for item: inout FeedbackItem) {
         switch item.type {
         case .depth:
@@ -719,6 +719,101 @@ class VisionViewModel: NSObject, ObservableObject {
         }
         return image
     }
+    
+    private func speakEndOfRepFeedback(repFeedbackItems: [FeedbackItem], repNumber: Int) {
+        var messageToSpeak: String?
+
+        // Prioritize constructive feedback
+        if let constructiveFeedback = repFeedbackItems.first(where: {
+            $0.type != .positive && $0.type != .repComplete && $0.type != .detectionQuality
+        }) {
+            switch constructiveFeedback.type {
+            case .depth:
+                messageToSpeak = "Rep \(repNumber) done. Next time, try to squat deeper."
+            case .kneeValgus:
+                messageToSpeak = "Rep \(repNumber) done. Watch your knees on the next one; try to push them out."
+            case .torsoAngle:
+                messageToSpeak = "Rep \(repNumber) done. Keep your chest up a bit more on the next rep."
+            case .heelLift:
+                messageToSpeak = "Rep \(repNumber) done. Try to keep your heels planted next time."
+            case .ascentRate:
+                messageToSpeak = "Rep \(repNumber) done. Drive your chest and hips up together on the ascent."
+            default:
+                // Generic constructive feedback if a specific short message isn't defined
+                messageToSpeak = "Rep \(repNumber) done. Focus on improving your form for the next one based on the on-screen feedback."
+            }
+        } else if let positiveFeedback = repFeedbackItems.first(where: { $0.type == .positive }) {
+            // Use the message from the positive feedback item, or a generic positive message
+            let positiveMessages = [
+                "Excellent rep, number \(repNumber)!",
+                "Great job on rep \(repNumber)!",
+                "Solid form on rep \(repNumber)!",
+                "Rep \(repNumber) looked good!",
+                // Use the message from the feedback item if it's concise enough
+                (positiveFeedback.message.count < 50 ? positiveFeedback.message : "Great work on rep \(repNumber)!")
+            ]
+            messageToSpeak = positiveMessages.randomElement() ?? "Rep \(repNumber) complete, nice job!"
+        } else if repFeedbackItems.first(where: { $0.type == .repComplete }) != nil {
+            // If only .repComplete is present (no specific positive or constructive feedback generated for the summary)
+            messageToSpeak = "Rep \(repNumber) complete. Get ready for the next one."
+        }
+
+        if let finalMessage = messageToSpeak {
+            let utterance = AVSpeechUtterance(string: finalMessage)
+            var chosenVoice: AVSpeechSynthesisVoice?
+
+            // Get all available voices
+            let voices = AVSpeechSynthesisVoice.speechVoices()
+//            print("***VOICES***")
+//            for voice in voices {
+//                if voice.language.starts(with: "en-US") {
+//                    print(voice.name)
+//                }
+//                print(voice.name)
+//            }
+
+            // 1. Prefer an "enhanced" or "premium" quality US English voice
+            chosenVoice = voices.first(where: {
+                $0.language.starts(with: "en-US") &&
+                ($0.quality == .enhanced || $0.quality == .premium) // .premium is for macOS, .enhanced for iOS
+            })
+
+            if chosenVoice != nil {
+                print("Using enhanced/premium US English voice: \(chosenVoice!.identifier)")
+            } else {
+                // 2. If no enhanced voice, try Alex specifically
+                print("No enhanced US English voice found. Trying Alex.")
+                chosenVoice = AVSpeechSynthesisVoice(identifier: AVSpeechSynthesisVoiceIdentifierAlex)
+                if chosenVoice != nil {
+                    print("Using Alex voice.")
+                } else {
+                    // 3. If Alex is not available, fallback to any standard US English voice
+                    print("Alex voice not available. Trying standard US English voice.")
+                    chosenVoice = voices.first(where: { $0.language.starts(with: "en-US") })
+                    if chosenVoice != nil {
+                        print("Using standard US English voice: \(chosenVoice!.identifier)")
+                    } else {
+                        // 4. Absolute fallback to the default voice for the device
+                        print("No US English voice found. Using system default voice.")
+                        chosenVoice = AVSpeechSynthesisVoice() // System default
+                        if let defaultLang = chosenVoice?.language {
+                           print("Using system default voice for language: \(defaultLang)")
+                        } else {
+                           print("Using absolute system default voice.")
+                        }
+                    }
+                }
+            }
+
+            utterance.voice = chosenVoice
+            utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+
+            if speechSynthesizer.isSpeaking {
+                speechSynthesizer.stopSpeaking(at: .immediate)
+            }
+            speechSynthesizer.speak(utterance)
+        }
+    }
 }
 
 // Extension for AVCaptureVideoDataOutputSampleBufferDelegate
@@ -745,6 +840,9 @@ extension VisionViewModel: AVCaptureVideoDataOutputSampleBufferDelegate {
                     // Add to summary and potentially to displayFeedbackItems if desired immediately
                     self.liveSummaryFeedbackItems.append(contentsOf: repFeedbackItems)
                     
+                    // Vocal Feedback Integration
+                    speakEndOfRepFeedback(repFeedbackItems: repFeedbackItems, repNumber: self.repCount)
+                    
                     // Optional: Show an immediate summary of the last rep's major issue
                     if let majorIssue = repFeedbackItems.first(where: { $0.type != .positive && $0.type != .repComplete }) {
                         self.currentLiveFeedback = LiveFeedback(message: "Rep \(self.repCount): \(majorIssue.message)", type: majorIssue.type, posePoints: self.livePoseOverlayPoints)
@@ -765,8 +863,6 @@ extension VisionViewModel: AVCaptureVideoDataOutputSampleBufferDelegate {
 }
 
 
-// VideoItem Transferable struct remains the same
-// (as in your VisionViewModel.txt source: 351-353)
 struct VideoItem: Transferable {
      let url: URL
      static var transferRepresentation: some TransferRepresentation {

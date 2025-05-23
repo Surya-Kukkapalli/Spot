@@ -784,11 +784,11 @@ struct FeedbackDetailSheet: View {
     // Helper from VisionView, ensure it's accessible
     private func feedbackIconColor(for type: FeedbackItem.FeedbackType, defaultColor: Color) -> Color {
          switch type {
-         case .depth, .kneeValgus, .torsoAngle, .heelLift, .ascentRate: return .orange // [cite: 266]
-         case .detectionQuality: return .red // [cite: 266]
-         case .positive: return .green // [cite: 266]
-         case .liveInstruction: return .blue // [cite: 266]
-         case .repComplete: return .purple // [cite: 266]
+         case .depth, .kneeValgus, .torsoAngle, .heelLift, .ascentRate: return .orange
+         case .detectionQuality: return .red
+         case .positive: return .green
+         case .liveInstruction: return .blue
+         case .repComplete: return .purple
          default: return defaultColor
          }
      }

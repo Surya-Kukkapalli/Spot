@@ -641,6 +641,27 @@ class PoseAnalyzer {
     
     private func checkKneeValgus(poses: [[CGPoint?]], bottomFrameIndex: Int, timestamps: [CMTime], isLive: Bool, livePose: [CGPoint?]?) -> [FeedbackItem] {
         let kneeCaveThresholdRatio: CGFloat = 0.90 // If knee horizontal distance < 90% of ankle distance
+        
+        // Helper closure to determine if the view is likely from the side
+        // This checks the horizontal separation of the shoulders.
+        // If shoulders are close horizontally, it implies a profile or near-profile view.
+        let isLikelySideViewHeuristic = { (pose: [CGPoint?]?) -> Bool in
+            guard let p = pose,
+                  let leftShoulderPoint = p[self.lShoulderIdx], // Use self if accessing instance members
+                  let rightShoulderPoint = p[self.rShoulderIdx] else {
+                // If shoulders aren't detected, we can't use this heuristic.
+                // Default to false (assume not a side view) to allow valgus check,
+                // or true to be cautious and skip valgus if shoulders are key to the check.
+                // Let's default to false for now, meaning the valgus check will proceed if shoulders are missing.
+                return false
+            }
+            let shoulderSeparationX = abs(leftShoulderPoint.x - rightShoulderPoint.x)
+
+            // Threshold: If horizontal shoulder separation is less than (e.g.) 15% of the view width.
+            // This value (0.15) may need tuning based on your typical camera setup and how "sideways" the view is.
+            // A smaller value means it needs to be more directly a side view to skip the check.
+            return shoulderSeparationX < 0.15
+        }
 
         if isLive {
             guard let currentPose = livePose,
@@ -648,6 +669,12 @@ class PoseAnalyzer {
                   let lAnkle = currentPose[lAnkleIdx], let rAnkle = currentPose[rAnkleIdx] else {
                 return []
             }
+            if isLikelySideViewHeuristic(currentPose) {
+                print("Knee Valgus (Live): Likely side view detected. Skipping valgus check.")
+                return [] // Skip valgus check if likely a side view
+            }
+
+            // Proceed with existing live valgus logic only if not a side view
             let kneeDistance = abs(lKnee.x - rKnee.x)
             let ankleDistance = abs(lAnkle.x - rAnkle.x)
             if ankleDistance > 0.01 && (kneeDistance / ankleDistance) < kneeCaveThresholdRatio {
@@ -657,6 +684,15 @@ class PoseAnalyzer {
                                      timestamp: timestamps.first)]
             }
         } else { // Video sequence analysis
+            // For video, check the side view heuristic on the bottom frame of the squat.
+            // If this critical frame is a side view, we'll skip the valgus check for the sequence.
+            // This is an approximation; if the camera angle changes significantly during the video,
+            // a per-frame side view check within the loop might be more robust but also more complex.
+            if let bottomPoseForCheck = poses[safe: bottomFrameIndex], isLikelySideViewHeuristic(bottomPoseForCheck) {
+                print("Knee Valgus (Video): Likely side view detected at squat bottom. Skipping valgus check for sequence.")
+                return [] // Skip valgus check
+            }
+            
             var valgusFrames: [Int] = []
             for (index, framePoses) in poses.enumerated() {
                 guard let lKnee = framePoses[lKneeIdx], let rKnee = framePoses[rKneeIdx],
