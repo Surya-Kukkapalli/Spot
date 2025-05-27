@@ -2,15 +2,21 @@ import SwiftUI
 
 struct SignUpView: View {
     @EnvironmentObject var viewModel: AuthViewModel
+    @StateObject private var signUpData = SignUpData()
     @Environment(\.dismiss) private var dismiss
     
-    @State private var email = ""
-    @State private var password = ""
-    @State private var username = ""
-    @State private var firstName = ""
-    @State private var lastName = ""
     @State private var showAlert = false
     @State private var errorMessage = ""
+    @State private var showFitnessProfile = false
+    
+    private var isFormValid: Bool {
+        !signUpData.email.isEmpty &&
+        !signUpData.password.isEmpty &&
+        !signUpData.username.isEmpty &&
+        !signUpData.firstName.isEmpty &&
+        !signUpData.lastName.isEmpty &&
+        signUpData.password.count >= 6
+    }
     
     var body: some View {
         VStack(spacing: 24) {
@@ -29,41 +35,44 @@ struct SignUpView: View {
             
             // Form Fields
             VStack(spacing: 16) {
-                FormField(title: "First Name", text: $firstName, icon: "person.fill")
-                FormField(title: "Last Name", text: $lastName, icon: "person.fill")
-                FormField(title: "Username", text: $username, icon: "at", autocapitalization: .never)
-                FormField(title: "Email", text: $email, icon: "envelope.fill", autocapitalization: .never)
-                FormField(title: "Password", text: $password, icon: "lock.fill", isSecure: true)
+                FormField(title: "First Name", text: $signUpData.firstName, icon: "person.fill")
+                FormField(title: "Last Name", text: $signUpData.lastName, icon: "person.fill")
+                FormField(title: "Username", text: $signUpData.username, icon: "at", autocapitalization: .never)
+                FormField(title: "Email", text: $signUpData.email, icon: "envelope.fill", autocapitalization: .never)
+                FormField(title: "Password", text: $signUpData.password, icon: "lock.fill", isSecure: true)
+                    .overlay(
+                        Group {
+                            if signUpData.password.count > 0 && signUpData.password.count < 6 {
+                                Text("Password must be at least 6 characters")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                                    .padding(.top, 50)
+                            }
+                        }
+                    )
             }
             .padding(.horizontal, 24)
             
             Spacer()
             
-            // Sign Up Button
+            // Continue Button
             Button {
-                Task {
-                    do {
-                        try await viewModel.createUser(
-                            email: email,
-                            password: password,
-                            username: username,
-                            firstName: firstName,
-                            lastName: lastName
-                        )
-                    } catch {
-                        errorMessage = error.localizedDescription
-                        showAlert = true
-                    }
+                if isFormValid {
+                    showFitnessProfile = true
+                } else {
+                    errorMessage = "Please fill in all fields and ensure password is at least 6 characters"
+                    showAlert = true
                 }
             } label: {
-                Text("Create Account")
+                Text("Continue to Profile Setup")
                     .font(.headline)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 56)
-                    .background(Color.red)
+                    .background(isFormValid ? Color.red : Color.gray)
                     .cornerRadius(12)
             }
+            .disabled(!isFormValid)
             .padding(.horizontal, 24)
             .padding(.bottom, 32)
         }
@@ -72,6 +81,11 @@ struct SignUpView: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text(errorMessage)
+        }
+        .fullScreenCover(isPresented: $showFitnessProfile) {
+            NavigationStack {
+                FitnessProfileSetupView(signUpData: signUpData)
+            }
         }
     }
 }

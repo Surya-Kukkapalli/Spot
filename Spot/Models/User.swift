@@ -7,7 +7,8 @@ struct User: Identifiable, Codable {
     let email: String
     var profileImageUrl: String?
     var bio: String?
-    var name: String?
+    var firstName: String?
+    var lastName: String?
     var isInfluencer: Bool?
     var followers: Int
     var following: Int
@@ -20,6 +21,7 @@ struct User: Identifiable, Codable {
     var averageWorkoutDuration: TimeInterval?
     var personalRecords: [String: PersonalRecord]?
     var exerciseOneRepMaxes: [String: OneRepMax]?
+    var fitnessProfile: UserFitnessProfile?
     
     struct PersonalRecord: Codable {
         let weight: Double
@@ -33,8 +35,19 @@ struct User: Identifiable, Codable {
     }
     
     // Computed properties
+    var name: String? {
+        if let firstName = firstName, let lastName = lastName {
+            return "\(firstName) \(lastName)".trimmingCharacters(in: .whitespaces)
+        } else if let firstName = firstName {
+            return firstName
+        } else if let lastName = lastName {
+            return lastName
+        }
+        return nil
+    }
+    
     var fullName: String {
-        "\(name ?? "")"
+        name ?? ""
     }
     
     var displayName: String {
@@ -47,7 +60,6 @@ struct User: Identifiable, Codable {
         case email
         case profileImageUrl
         case bio
-        case name
         case firstName
         case lastName
         case isInfluencer
@@ -62,6 +74,7 @@ struct User: Identifiable, Codable {
         case averageWorkoutDuration
         case personalRecords
         case exerciseOneRepMaxes
+        case fitnessProfile
     }
     
     init(from decoder: Decoder) throws {
@@ -85,17 +98,11 @@ struct User: Identifiable, Codable {
         averageWorkoutDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .averageWorkoutDuration)
         personalRecords = try container.decodeIfPresent([String: PersonalRecord].self, forKey: .personalRecords)
         exerciseOneRepMaxes = try container.decodeIfPresent([String: OneRepMax].self, forKey: .exerciseOneRepMaxes)
+        fitnessProfile = try container.decodeIfPresent(UserFitnessProfile.self, forKey: .fitnessProfile)
         
-        // Handle name field with legacy support
-        if let name = try? container.decodeIfPresent(String.self, forKey: .name) {
-            self.name = name
-        } else {
-            let firstName = try container.decodeIfPresent(String.self, forKey: .firstName) ?? ""
-            let lastName = try container.decodeIfPresent(String.self, forKey: .lastName) ?? ""
-            if !firstName.isEmpty || !lastName.isEmpty {
-                self.name = [firstName, lastName].filter { !$0.isEmpty }.joined(separator: " ")
-            }
-        }
+        // Handle first and last name
+        firstName = try container.decodeIfPresent(String.self, forKey: .firstName)
+        lastName = try container.decodeIfPresent(String.self, forKey: .lastName)
     }
     
     func encode(to encoder: Encoder) throws {
@@ -111,7 +118,8 @@ struct User: Identifiable, Codable {
         try container.encode(updatedAt, forKey: .updatedAt)
         
         if let id = id { try container.encode(id, forKey: .id) }
-        if let name = name { try container.encode(name, forKey: .name) }
+        if let firstName = firstName { try container.encode(firstName, forKey: .firstName) }
+        if let lastName = lastName { try container.encode(lastName, forKey: .lastName) }
         if let profileImageUrl = profileImageUrl { try container.encode(profileImageUrl, forKey: .profileImageUrl) }
         if let bio = bio { try container.encode(bio, forKey: .bio) }
         if let isInfluencer = isInfluencer { try container.encode(isInfluencer, forKey: .isInfluencer) }
@@ -120,11 +128,13 @@ struct User: Identifiable, Codable {
         if let averageWorkoutDuration = averageWorkoutDuration { try container.encode(averageWorkoutDuration, forKey: .averageWorkoutDuration) }
         if let personalRecords = personalRecords { try container.encode(personalRecords, forKey: .personalRecords) }
         if let exerciseOneRepMaxes = exerciseOneRepMaxes { try container.encode(exerciseOneRepMaxes, forKey: .exerciseOneRepMaxes) }
+        if let fitnessProfile = fitnessProfile { try container.encode(fitnessProfile, forKey: .fitnessProfile) }
     }
     
     init(id: String? = nil,
          username: String,
-         name: String? = nil,
+         firstName: String? = nil,
+         lastName: String? = nil,
          email: String,
          profileImageUrl: String? = nil,
          bio: String? = nil,
@@ -139,10 +149,12 @@ struct User: Identifiable, Codable {
          totalWorkoutDuration: TimeInterval? = nil,
          averageWorkoutDuration: TimeInterval? = nil,
          personalRecords: [String: PersonalRecord]? = nil,
-         exerciseOneRepMaxes: [String: OneRepMax]? = nil) {
+         exerciseOneRepMaxes: [String: OneRepMax]? = nil,
+         fitnessProfile: UserFitnessProfile? = nil) {
         self.id = id
         self.username = username
-        self.name = name
+        self.firstName = firstName
+        self.lastName = lastName
         self.email = email
         self.profileImageUrl = profileImageUrl
         self.bio = bio
@@ -158,6 +170,7 @@ struct User: Identifiable, Codable {
         self.averageWorkoutDuration = averageWorkoutDuration
         self.personalRecords = personalRecords
         self.exerciseOneRepMaxes = exerciseOneRepMaxes
+        self.fitnessProfile = fitnessProfile
     }
     
     init?(dictionary: [String: Any]) {
@@ -168,7 +181,8 @@ struct User: Identifiable, Codable {
         
         self.id = dictionary["id"] as? String
         self.username = username
-        self.name = dictionary["name"] as? String
+        self.firstName = dictionary["firstName"] as? String
+        self.lastName = dictionary["lastName"] as? String
         self.email = email
         self.profileImageUrl = dictionary["profileImageUrl"] as? String
         self.bio = dictionary["bio"] as? String
@@ -184,6 +198,7 @@ struct User: Identifiable, Codable {
         self.averageWorkoutDuration = dictionary["averageWorkoutDuration"] as? TimeInterval
         self.personalRecords = dictionary["personalRecords"] as? [String: PersonalRecord]
         self.exerciseOneRepMaxes = dictionary["exerciseOneRepMaxes"] as? [String: OneRepMax]
+        self.fitnessProfile = dictionary["fitnessProfile"] as? UserFitnessProfile
     }
     
     func toDictionary() -> [String: Any] {
@@ -202,7 +217,8 @@ struct User: Identifiable, Codable {
         ]
         
         if let id = id { dict["id"] = id }
-        if let name = name { dict["name"] = name }
+        if let firstName = firstName { dict["firstName"] = firstName }
+        if let lastName = lastName { dict["lastName"] = lastName }
         if let profileImageUrl = profileImageUrl { dict["profileImageUrl"] = profileImageUrl }
         if let bio = bio { dict["bio"] = bio }
         if let isInfluencer = isInfluencer { dict["isInfluencer"] = isInfluencer }
@@ -211,6 +227,7 @@ struct User: Identifiable, Codable {
         if let averageWorkoutDuration = averageWorkoutDuration { dict["averageWorkoutDuration"] = averageWorkoutDuration }
         if let personalRecords = personalRecords { dict["personalRecords"] = personalRecords }
         if let exerciseOneRepMaxes = exerciseOneRepMaxes { dict["exerciseOneRepMaxes"] = exerciseOneRepMaxes }
+        if let fitnessProfile = fitnessProfile { dict["fitnessProfile"] = fitnessProfile }
         
         return dict
     }

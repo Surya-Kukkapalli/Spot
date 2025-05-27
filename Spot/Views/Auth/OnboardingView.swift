@@ -29,7 +29,7 @@ struct OnboardingView: View {
         ),
         OnboardingFeature(
             title: "Smart Workouts",
-            description: "Science-based, dynamic workout programs created using custom our custom machine learning models (Coming Soon)",
+            description: "Science-based, dynamic workout programs created using our proprietary machine learning models (Coming Soon)",
             iconName: "brain.head.profile"
         ),
         OnboardingFeature(

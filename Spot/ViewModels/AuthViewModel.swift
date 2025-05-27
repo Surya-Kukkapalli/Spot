@@ -81,7 +81,8 @@ class AuthViewModel: ObservableObject {
             // Create initial user data
             let userData: [String: Any] = [
                 "username": username,
-                "name": "\(firstName) \(lastName)",
+                "firstName": firstName,
+                "lastName": lastName,
                 "email": email,
                 "isInfluencer": false,
                 "followers": 0,
@@ -103,7 +104,8 @@ class AuthViewModel: ObservableObject {
             let user = User(
                 id: result.user.uid,
                 username: username,
-                name: "\(firstName) \(lastName)",
+                firstName: firstName,
+                lastName: lastName,
                 email: email,
                 profileImageUrl: nil,
                 bio: nil,
@@ -207,7 +209,8 @@ class AuthViewModel: ObservableObject {
         // Update user data
         let userData: [String: Any] = [
             "username": username,
-            "name": "\(firstName) \(lastName)",
+            "firstName": firstName,
+            "lastName": lastName,
             "bio": bio ?? NSNull()
         ]
         
@@ -216,7 +219,8 @@ class AuthViewModel: ObservableObject {
         // Update local user object
         if var updatedUser = currentUser {
             updatedUser.username = username
-            updatedUser.name = "\(firstName) \(lastName)"
+            updatedUser.firstName = firstName
+            updatedUser.lastName = lastName
             updatedUser.bio = bio
             self.currentUser = updatedUser
         }
@@ -299,6 +303,25 @@ class AuthViewModel: ObservableObject {
         } catch {
             showError = true
             errorMessage = error.localizedDescription
+        }
+    }
+    
+    func updateFitnessProfile(_ profile: UserFitnessProfile) async throws {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw AuthError.userNotFound
+        }
+        
+        let userRef = db.collection("users").document(userId)
+        
+        // Update user data
+        try await userRef.updateData([
+            "fitnessProfile": profile.dictionary
+        ])
+        
+        // Update local user object
+        if var updatedUser = currentUser {
+            updatedUser.fitnessProfile = profile
+            self.currentUser = updatedUser
         }
     }
 }

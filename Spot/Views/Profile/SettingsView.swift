@@ -9,6 +9,29 @@ struct SettingsView: View {
     @AppStorage("unitSystem") private var unitSystem = "imperial" // "imperial" or "metric"
     @State private var showDeleteAccountAlert = false
     @State private var showSignOutAlert = false
+    @State private var showEditFitnessProfile = false
+    @State private var showEditGoals = false
+    
+    private func createSignUpDataFromCurrentUser() -> SignUpData {
+        let signUpData = SignUpData()
+        if let user = authViewModel.currentUser {
+            signUpData.email = user.email
+            signUpData.username = user.username
+            signUpData.firstName = user.firstName ?? ""
+            signUpData.lastName = user.lastName ?? ""
+            
+            if let profile = user.fitnessProfile {
+                signUpData.weight = profile.weight
+                signUpData.height = profile.height
+                signUpData.sex = profile.sex ?? "male" // Default to "male" if sex is nil
+                signUpData.measurementSystem = profile.measurementSystem
+                signUpData.selectedGoalTypes = Set(profile.goals.map { $0.type })
+                signUpData.experienceLevel = profile.experienceLevel
+                signUpData.selectedWorkoutTypes = Set(profile.preferredWorkoutTypes)
+            }
+        }
+        return signUpData
+    }
     
     var body: some View {
         NavigationStack {
@@ -28,6 +51,18 @@ struct SettingsView: View {
                         EditProfileView()
                     } label: {
                         Label("Edit Profile", systemImage: "person.circle")
+                    }
+                    
+                    Button {
+                        showEditFitnessProfile = true
+                    } label: {
+                        Label("Fitness Profile", systemImage: "figure.run")
+                    }
+                    
+                    Button {
+                        showEditGoals = true
+                    } label: {
+                        Label("Fitness Goals", systemImage: "target")
                     }
                     
                     NavigationLink {
@@ -74,17 +109,28 @@ struct SettingsView: View {
                     Button(role: .destructive) {
                         showDeleteAccountAlert = true
                     } label: {
-                        Label("Delete Account", systemImage: "person.crop.circle.badge.minus")
+                        Label("Delete Account", systemImage: "trash")
                     }
                 }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showEditFitnessProfile) {
+                NavigationStack {
+                    FitnessProfileSetupView(signUpData: createSignUpDataFromCurrentUser())
+                        .navigationTitle("Edit Fitness Profile")
+                }
+            }
+            .sheet(isPresented: $showEditGoals) {
+                NavigationStack {
+                    GoalSettingView(signUpData: createSignUpDataFromCurrentUser())
+                        .navigationTitle("Edit Goals")
+                }
+            }
             .alert("Sign Out", isPresented: $showSignOutAlert) {
                 Button("Cancel", role: .cancel) { }
                 Button("Sign Out", role: .destructive) {
                     try? authViewModel.signOut()
-                    dismiss()
                 }
             } message: {
                 Text("Are you sure you want to sign out?")
