@@ -12,6 +12,9 @@ struct ProfileView: View {
     @State private var selectedMetric: ProfileViewModel.WorkoutMetric = .duration
     @State private var showError = false
     @State private var errorMessage = ""
+    @State private var showImageCropper = false
+    @State private var sourceImage: UIImage?
+    @State private var isLoadingImage = false
     
     init(userId: String? = nil) {
         self.userId = userId
@@ -30,7 +33,8 @@ struct ProfileView: View {
                             user: displayUser,
                             selectedPhotoItem: $selectedPhotoItem,
                             onPhotoChange: handlePhotoChange,
-                            isCurrentUser: isCurrentUser
+                            isCurrentUser: isCurrentUser,
+                            isLoadingImage: isLoadingImage
                         )
                         
                         // Profile Stats with Navigation
@@ -108,7 +112,7 @@ struct ProfileView: View {
                     ProgressView("Loading profile...")
                 }
             }
-            .navigationTitle(navigationTitle)
+            //.navigationTitle(navigationTitle)
             .toolbar { toolbarContent }
             .sheet(isPresented: $showEditProfile) {
                 EditProfileView()
@@ -120,6 +124,25 @@ struct ProfileView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(errorMessage)
+            }
+            .fullScreenCover(isPresented: $showImageCropper, onDismiss: {
+                // Clear source image if cropper is dismissed without choosing
+                if sourceImage != nil {
+                    sourceImage = nil
+                }
+            }) {
+                if let sourceImage = sourceImage {
+                    ImageCropperView(
+                        sourceImage: sourceImage,
+                        onCrop: { croppedImage in
+                            showImageCropper = false
+                            uploadImage(croppedImage)
+                        },
+                        onCancel: {
+                            showImageCropper = false
+                        }
+                    )
+                }
             }
             .task {
                 await loadData()
@@ -195,9 +218,46 @@ struct ProfileView: View {
         }
     }
     
-    // TODO: Implement photo feature for profiles later
     private func handlePhotoChange() async {
-        print("will implement later")
+        guard let photoItem = selectedPhotoItem else { return }
+        selectedPhotoItem = nil // Reset immediately to prevent multiple selections
+        
+        isLoadingImage = true
+        defer { isLoadingImage = false }
+        
+        do {
+            if let data = try await photoItem.loadTransferable(type: Data.self),
+               let uiImage = UIImage(data: data) {
+                await MainActor.run {
+                    sourceImage = uiImage
+                    showImageCropper = true
+                }
+            } else {
+                throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not load image data"])
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to load selected image: \(error.localizedDescription)"
+                showError = true
+            }
+        }
+    }
+    
+    private func uploadImage(_ image: UIImage) {
+        Task {
+            do {
+                try await viewModel.uploadProfileImage(image)
+                await MainActor.run {
+                    // Clear the source image after successful upload
+                    sourceImage = nil
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to update profile picture: \(error.localizedDescription)"
+                    showError = true
+                }
+            }
+        }
     }
 }
 
@@ -207,12 +267,23 @@ struct ProfileHeaderSection: View {
     @Binding var selectedPhotoItem: PhotosPickerItem?
     let onPhotoChange: () async -> Void
     let isCurrentUser: Bool
+    let isLoadingImage: Bool
+    @StateObject private var viewModel = ProfileViewModel()
     
     var body: some View {
         VStack(spacing: 16) {
             if isCurrentUser {
                 PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                    profileImage
+                    ZStack {
+                        profileImage
+                        
+                        if viewModel.isLoading || isLoadingImage {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .background(Color.black.opacity(0.3))
+                                .clipShape(Circle())
+                        }
+                    }
                 }
                 .onChange(of: selectedPhotoItem) { _ in
                     Task {

@@ -196,24 +196,41 @@ class ProfileViewModel: ObservableObject {
         }
     }
     
-    func uploadProfileImage(_ image: UIImage) async {
-        guard let userId = Auth.auth().currentUser?.uid,
-              let imageData = image.jpegData(compressionQuality: 0.5) else { return }
+    func uploadProfileImage(_ image: UIImage) async throws {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw NSError(domain: "ProfileViewModel", code: 400, userInfo: [NSLocalizedDescriptionKey: "User not found"])
+        }
         
-        isLoading = true
-        defer { isLoading = false }
+        await MainActor.run { isLoading = true }
+        defer { Task { @MainActor in isLoading = false } }
         
         do {
-            let storageRef = storage.reference().child("profile_images/\(userId).jpg")
-            let _ = try await storageRef.putDataAsync(imageData)
-            let downloadURL = try await storageRef.downloadURL()
+            let storageService = StorageService()
+            let imageUrl = try await storageService.uploadProfileImage(image, userId: userId)
             
+            // Update user document with new profile image URL
             try await db.collection("users").document(userId).updateData([
-                "profileImageUrl": downloadURL.absoluteString,
+                "profileImageUrl": imageUrl,
                 "updatedAt": Date()
             ])
+            
+            // Fetch the updated user document to ensure we have the latest data
+            let userDoc = try await db.collection("users").document(userId).getDocument()
+            let updatedUser = try userDoc.data(as: User.self)
+            
+            // Update local state
+            await MainActor.run {
+                self.user = updatedUser
+                // Post notification for other views to refresh
+                NotificationCenter.default.post(
+                    name: .init("userProfileImageUpdated"),
+                    object: nil,
+                    userInfo: ["userId": userId, "imageUrl": imageUrl]
+                )
+            }
         } catch {
             print("Error uploading profile image: \(error)")
+            throw error
         }
     }
     

@@ -2,6 +2,7 @@ import SwiftUI
 import Firebase
 import FirebaseAuth
 import FirebaseFirestore
+import Combine
 
 @MainActor
 class AuthViewModel: ObservableObject {
@@ -15,16 +16,62 @@ class AuthViewModel: ObservableObject {
     
     private let db = Firestore.firestore()
     private let auth = Auth.auth()
+    private var cancellables = Set<AnyCancellable>()
     
     init() {
         print("DEBUG: Initializing AuthViewModel")
-        self.userSession = Auth.auth().currentUser
-        print("DEBUG: Initial userSession: \(String(describing: self.userSession?.uid))")
+        setupUserSession()
+        setupNotificationObservers()
         setupAuthStateListener()
         
         Task {
             await fetchUser()
         }
+    }
+    
+    private func setupUserSession() {
+        userSession = auth.currentUser
+        
+        if let userSession = userSession {
+            Task {
+                await fetchUser(userId: userSession.uid)
+            }
+        }
+    }
+    
+    private func setupNotificationObservers() {
+        // Listen for profile image updates
+        NotificationCenter.default.publisher(for: .init("userProfileImageUpdated"))
+            .sink { [weak self] notification in
+                guard let self = self,
+                      let userId = notification.userInfo?["userId"] as? String,
+                      let imageUrl = notification.userInfo?["imageUrl"] as? String else { return }
+                
+                // Update current user if it's the same user
+                if userId == self.currentUser?.id {
+                    Task {
+                        // Fetch the complete updated user document
+                        let document = try? await self.db.collection("users").document(userId).getDocument()
+                        if var updatedUser = try? document?.data(as: User.self) {
+                            updatedUser.id = userId
+                            await MainActor.run {
+                                self.currentUser = updatedUser
+                                // Re-broadcast the notification to ensure all listeners get updated
+                                NotificationCenter.default.post(
+                                    name: .init("userProfileImageUpdated"),
+                                    object: nil,
+                                    userInfo: [
+                                        "userId": userId,
+                                        "imageUrl": imageUrl,
+                                        "username": updatedUser.username
+                                    ]
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            .store(in: &cancellables)
     }
     
     private func setupAuthStateListener() {

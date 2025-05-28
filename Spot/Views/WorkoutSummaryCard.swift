@@ -11,11 +11,13 @@ struct WorkoutSummaryCard: View {
     @State private var showShareSheet = false
     @State private var showCopiedAlert = false
     @StateObject private var programViewModel = WorkoutProgramViewModel()
+    @State private var profileImageUrl: String?
     
     init(workout: WorkoutSummary) {
         self.workout = workout
         _fistBumpCount = State(initialValue: workout.fistBumps)
         _commentCount = State(initialValue: workout.comments)
+        _profileImageUrl = State(initialValue: workout.userProfileImageUrl)
     }
     
     var body: some View {
@@ -30,7 +32,7 @@ struct WorkoutSummaryCard: View {
                         OtherUserProfileView(userId: workout.userId)
                     }
                 }) {
-                    AsyncImage(url: URL(string: workout.userProfileImageUrl ?? "")) { image in
+                    AsyncImage(url: URL(string: profileImageUrl ?? "")) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
                         Circle().foregroundColor(.gray.opacity(0.3))
@@ -327,6 +329,22 @@ struct WorkoutSummaryCard: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text("You can find it in the templates section when logging your next workout.")
+        }
+        .onAppear {
+            // Check if we need to update the profile image URL from the current user
+            if workout.userId == authViewModel.currentUser?.id,
+               let currentImageUrl = authViewModel.currentUser?.profileImageUrl {
+                profileImageUrl = currentImageUrl
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("userProfileImageUpdated"))) { notification in
+            guard let userId = notification.userInfo?["userId"] as? String,
+                  let imageUrl = notification.userInfo?["imageUrl"] as? String,
+                  userId == workout.userId else { return }
+            
+            Task { @MainActor in
+                profileImageUrl = imageUrl
+            }
         }
     }
 }
